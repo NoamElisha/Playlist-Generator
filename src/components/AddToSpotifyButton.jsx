@@ -9,15 +9,19 @@ export default function AddToSpotifyButton({ playlistText }) {
       console.log('▶ Creating playlist on Spotify, tracks:', tracks);
       const res = await fetch('/api/spotify/create-playlist', {
         method: 'POST',
+        credentials: 'same-origin', // <--- חשוב! שולח cookies לאותו domain
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'AI Playlist', tracks })
       });
+
+      console.log('create-playlist: HTTP status', res.status);
+
       if (res.status === 401) {
-        // redirect to login
         console.log('Not authenticated, redirecting to Spotify login...');
         window.location.href = '/api/spotify/login';
         return;
       }
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create playlist');
       console.log('◀ Spotify create-playlist response:', data);

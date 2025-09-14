@@ -1,11 +1,19 @@
 import React from 'react';
-import ReactMarkdown from 'react-markdown';
 
 export default function ClaudePlaylist({ playlistText }) {
+  // split into lines and render as numbered list with an empty line between items
+  const lines = (playlistText || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
   return (
     <section className="suggested-recipe-container" aria-live="polite">
       <h2>Suggested Playlist</h2>
-      <ReactMarkdown>{playlistText}</ReactMarkdown>
+      <ol style={{ textAlign: 'left', display: 'inline-block', paddingLeft: 24 }}>
+        {lines.map((line, idx) => (
+          <li key={idx} style={{ marginBottom: '1rem', lineHeight: '1.4' }}>
+            {line}
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
