@@ -1,4 +1,4 @@
-// src/components/AddToSpotifyButton.jsx
+// /src/components/AddToSpotifyButton.jsx
 import { parsePlaylistTextToTracks } from '../utils/parsePlaylistText';
 
 export default function AddToSpotifyButton({ playlistText, playlistName }) {
@@ -24,18 +24,27 @@ export default function AddToSpotifyButton({ playlistText, playlistName }) {
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create playlist');
-      console.log('◀ Spotify create-playlist response:', data);
+
+      // ✅ הודעת הצלחה + פתיחת הפלייליסט
+      const msg = `✅ נוצר פלייליסט ב-Spotify: ${playlistName || 'AI Playlist'}\nהוספנו ${data.added} שירים.`;
+      alert(msg);
       if (data.playlistUrl) {
-        // open playlist in new tab
         window.open(data.playlistUrl, '_blank');
-      } else {
-        alert('Playlist created (no URL returned). Check your Spotify library.');
       }
+
     } catch (err) {
       console.error('AddToSpotifyButton error:', err);
       alert('Error: ' + (err.message || err));
     }
   }
 
-  return <button onClick={handleAdd} style={{padding:'10px 16px', borderRadius:8, background:'#1DB954', color:'#fff', border:'none'}}>Add Playlist to Spotify</button>;
+  return (
+    <button
+      onClick={handleAdd}
+      style={{padding:'10px 16px', borderRadius:8, background:'#1DB954', color:'#fff', border:'none'}}
+      title="הוספת הפלייליסט לחשבון ה-Spotify שלך"
+    >
+      Add Playlist to Spotify
+    </button>
+  );
 }

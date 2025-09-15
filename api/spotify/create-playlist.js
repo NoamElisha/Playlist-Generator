@@ -1,4 +1,4 @@
-// api/spotify/create-playlist.js
+// /api/spotify/create-playlist.js
 function parseCookies(cookieHeader) {
   const cookies = {};
   if (!cookieHeader) return cookies;
@@ -6,6 +6,44 @@ function parseCookies(cookieHeader) {
     const [k, ...v] = pair.split('=');
     cookies[k?.trim()] = decodeURIComponent(v.join('=').trim());
   });
+  return cookies;
+}
+
+async function refreshAccessToken(refreshToken) {
+  const client_id = process.env.SPOTIFY_CLIENT_ID;
+  const client_secret = process.env.SPOTIFY_CLIENT_SECRET;
+  if (!refreshToken) throw new Error('No refresh token');
+
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    client_id,
+    client_secret
+  });
+
+  const r = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString()
+  });
+
+  const j = await r.json();
+  if (!r.ok) {
+    throw new Error('Spotify refresh failed: ' + JSON.stringify(j));
+  }
+  return j; // { access_token, token_type, scope, expires_in, refresh_token? }
+}
+
+function cookieStringsFromTokens({ access_token, refresh_token }) {
+  const isProd = process.env.NODE_ENV === 'production';
+  const baseCookie = 'HttpOnly; Path=/; SameSite=Lax';
+  const cookies = [];
+  if (access_token) {
+    cookies.push(`spotify_access_token=${access_token}; ${baseCookie}; Max-Age=3600${isProd ? '; Secure' : ''}`);
+  }
+  if (refresh_token) {
+    cookies.push(`spotify_refresh_token=${refresh_token}; ${baseCookie}; Max-Age=${60*60*24*30}${isProd ? '; Secure' : ''}`);
+  }
   return cookies;
 }
 
@@ -17,35 +55,71 @@ export default async function handler(req, res) {
   let accessToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
   // fallback: parse cookie header
+  const cookies = parseCookies(req.headers?.cookie || '');
+  let refreshToken = cookies.spotify_refresh_token || null;
   if (!accessToken) {
-    const cookies = parseCookies(req.headers?.cookie || '');
     accessToken = cookies.spotify_access_token || null;
   }
 
-  console.log('create-playlist: accessToken present?', !!accessToken);
-
-  if (!accessToken) return res.status(401).json({ error: 'Not authenticated with Spotify (no access token)' });
+  console.log('create-playlist: accessToken present?', !!accessToken, 'refresh present?', !!refreshToken);
 
   const { name = 'My AI Playlist', tracks } = req.body;
   if (!Array.isArray(tracks) || tracks.length === 0) {
     return res.status(400).json({ error: 'Missing tracks array' });
   }
 
-  try {
-    // 1) get current user
+  async function ensureUserToken() {
+    // נסה /me עם ה-token הנוכחי; אם לא עובד ונמצא refresh_token — רענון ואח"כ retry
     let r = await fetch('https://api.spotify.com/v1/me', {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
+
+    if (r.status === 401 || r.status === 403) {
+      if (!refreshToken) {
+        return { ok: false, status: 401, body: 'Not authenticated with Spotify (no valid token)' };
+      }
+      try {
+        const refreshed = await refreshAccessToken(refreshToken);
+        accessToken = refreshed.access_token;
+        // אם הגיע refresh_token חדש – נעדכן גם אותו
+        if (refreshed.refresh_token) refreshToken = refreshed.refresh_token;
+
+        // נעדכן קוקיות למשתמש
+        const setCookies = cookieStringsFromTokens(refreshed);
+        if (setCookies.length) res.setHeader('Set-Cookie', setCookies);
+
+        // ננסה שוב
+        r = await fetch('https://api.spotify.com/v1/me', {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+      } catch (err) {
+        console.error('refreshAccessToken failed:', err);
+        return { ok: false, status: 401, body: 'Spotify session expired. Please log in again.' };
+      }
+    }
+
     if (!r.ok) {
       const txt = await r.text();
       console.error('create-playlist: /me failed', r.status, txt);
-      return res.status(r.status).send(txt);
+      return { ok: false, status: r.status, body: txt };
     }
+
     const me = await r.json();
-    const userId = me.id;
+    return { ok: true, me };
+  }
+
+  try {
+    const ensured = await ensureUserToken();
+    if (!ensured.ok) {
+      if (ensured.status === 401) {
+        return res.status(401).json({ error: ensured.body });
+      }
+      return res.status(ensured.status || 500).send(ensured.body || 'Spotify /me failed');
+    }
+    const userId = ensured.me.id;
 
     // 2) create playlist
-    r = await fetch(`https://api.spotify.com/v1/users/${encodeURIComponent(userId)}/playlists`, {
+    let r = await fetch(`https://api.spotify.com/v1/users/${encodeURIComponent(userId)}/playlists`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, description: 'Playlist created by AI', public: false })
@@ -87,7 +161,12 @@ export default async function handler(req, res) {
     }
 
     console.log('create-playlist: finished, added', uris.length);
-    return res.status(200).json({ playlistUrl: pl.external_urls.spotify, added: uris.length, totalFound: uris.length });
+    return res.status(200).json({
+      playlistUrl: pl.external_urls.spotify,
+      added: uris.length,
+      totalFound: uris.length,
+      message: 'Playlist created and tracks added'
+    });
 
   } catch (err) {
     console.error('spotify create playlist error', err);

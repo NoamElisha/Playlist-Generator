@@ -1,4 +1,4 @@
-// api/spotify/callback.js
+// /api/spotify/callback.js
 export default async function handler(req, res) {
   try {
     const { code, error } = req.query;
@@ -30,21 +30,20 @@ export default async function handler(req, res) {
     console.log('spotify callback: token response status', tokenRes.status, 'body:', data);
 
     if (!tokenRes.ok) {
-      // Log and return a helpful page
       console.error('spotify token error', data);
       return res.status(500).send('Spotify token exchange failed. Check logs.');
     }
 
-    // Set cookies (HttpOnly). Adjust Secure depending on env (in prod Secure should be set)
-    const cookieOptions = 'HttpOnly; Path=/; SameSite=Lax; Max-Age=3600';
-    const refreshCookieOptions = 'HttpOnly; Path=/; SameSite=Lax; Max-Age=' + (60*60*24*30);
+    const isProd = process.env.NODE_ENV === 'production';
+    const baseCookie = 'HttpOnly; Path=/; SameSite=Lax';
+    const accessCookie = `${baseCookie}; Max-Age=3600${isProd ? '; Secure' : ''}`;
+    const refreshCookie = `${baseCookie}; Max-Age=${60*60*24*30}${isProd ? '; Secure' : ''}`;
 
     res.setHeader('Set-Cookie', [
-      `spotify_access_token=${data.access_token}; ${cookieOptions}; Secure`,
-      `spotify_refresh_token=${data.refresh_token}; ${refreshCookieOptions}; Secure`
+      `spotify_access_token=${data.access_token}; ${accessCookie}`,
+      `spotify_refresh_token=${data.refresh_token}; ${refreshCookie}`
     ]);
 
-    // redirect back to the main app with success flag
     const redirectTo = '/?spotify=connected';
     res.writeHead(302, { Location: redirectTo });
     res.end();
