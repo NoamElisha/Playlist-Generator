@@ -1,10 +1,10 @@
 // /api/playlist-claude.js
 const SPOTIFY_MARKET = process.env.SPOTIFY_MARKET || "IL"; // אפשר לשנות ל-US וכו'
 const TARGET_MIN = 20; // מינימום קשיח
+const MAX_CONSEC = 2;  // לא יותר מ-2 שירים רצופים מאותו אמן (נרפה רק אם תקוע)
 
 function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 function shuffle(arr){ for (let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]];} return arr; }
-
 function splitLines(text){ return (text||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean); }
 function parseLineToPair(line){
   const parts = (line||"").split(/[-–—]/).map(s=>s.trim()).filter(Boolean);
@@ -46,7 +46,6 @@ async function searchTrackFlexible(token, title, artist, market=SPOTIFY_MARKET){
     if (!r.ok) continue;
     const items = (await r.json())?.tracks?.items || [];
     if (items.length){
-      // העדף התאמה לפי שם האמן אם קיים
       const hit = items.find(it => it.artists?.some(a => a.name.toLowerCase() === artist.toLowerCase()))
                || items[0];
       if (hit) return hit;
@@ -55,7 +54,7 @@ async function searchTrackFlexible(token, title, artist, market=SPOTIFY_MARKET){
   return null;
 }
 
-// מחזיר {title, artist} נורמליים מהסידס, לפי שמות רשמיים של Spotify
+// נרמול סיד—להוציא משמות רשמיים של ספוטיפיי (מתקן גם Artist/Title הפוכים)
 async function normalizeSeed(token, raw){
   const p = parseLineToPair(raw);
   if (p){
@@ -66,7 +65,7 @@ async function normalizeSeed(token, raw){
       return { title: name, artist: primary };
     }
   }
-  // ניסיון פשטני אם אין פיצול:
+  // ניסיון פשטני אם אין פיצול ברור:
   const q = raw.replace(/[-–—]/g," ");
   const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&limit=5${SPOTIFY_MARKET?`&market=${SPOTIFY_MARKET}`:""}`;
   const r = await fetch(url,{ headers:{ Authorization:`Bearer ${token}` }});
@@ -77,16 +76,62 @@ async function normalizeSeed(token, raw){
   return null;
 }
 
-// שליפת הרבה טראקים לאמן ע"י חיפוש tracks על שם האמן (מהיר, 50 תוצאות)
+// קבלת רשימת טראקים עשירה לאמן: גם top-tracks (אם קיים id), גם חיפוש track לפי artist
 async function fetchArtistTracks(token, artistName, market=SPOTIFY_MARKET){
-  const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(`artist:"${artistName}"`)}&type=track&limit=50${market?`&market=${market}`:""}`;
-  const r = await fetch(url,{ headers:{ Authorization:`Bearer ${token}` }});
-  if (!r.ok) return [];
-  const items = (await r.json())?.tracks?.items || [];
-  // נשמור רק טראקים שהאמן הראשי שלהם הוא האמן המבוקש (כדי להימנע מפיצ'רים לא רלוונטיים)
-  return items
-    .filter(t => (t.artists?.[0]?.name || "").toLowerCase().trim() === artistName.toLowerCase().trim())
-    .sort((a,b) => (b.popularity||0) - (a.popularity||0)); // פופולריים ראשונים
+  let artistId = null;
+  // קודם חפש entity של האמן כדי לנסות להביא top-tracks
+  try {
+    const aUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(artistName)}&type=artist&limit=3`;
+    const ar = await fetch(aUrl, { headers:{ Authorization:`Bearer ${token}` }});
+    if (ar.ok){
+      const artists = (await ar.json())?.artists?.items || [];
+      const best = artists.find(a => a.name.toLowerCase() === artistName.toLowerCase()) || artists[0];
+      artistId = best?.id || null;
+    }
+  } catch {}
+
+  const out = [];
+  // 1) Top-tracks אם יש מזהה אמן
+  if (artistId) {
+    try{
+      const tUrl = `https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=${market||"IL"}`;
+      const tr = await fetch(tUrl, { headers:{ Authorization:`Bearer ${token}` }});
+      if (tr.ok){
+        const items = (await tr.json())?.tracks || [];
+        out.push(...items);
+      }
+    } catch {}
+  }
+
+  // 2) חיפוש track לפי artist:"name"
+  try {
+    const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(`artist:"${artistName}"`)}&type=track&limit=50${market?`&market=${market}`:""}`;
+    const r = await fetch(url,{ headers:{ Authorization:`Bearer ${token}` }});
+    if (r.ok){
+      const items = (await r.json())?.tracks?.items || [];
+      out.push(...items);
+    }
+  } catch {}
+
+  // ניקוי: רק אם האמן הראשי הוא האמן המבוקש (או מופיע ברשימת האמנים)
+  const filtered = out.filter(t =>
+    (t.artists?.[0]?.name || "").toLowerCase().trim() === artistName.toLowerCase().trim()
+    || (t.artists || []).some(a => a.name.toLowerCase().trim() === artistName.toLowerCase().trim())
+  );
+
+  // מיון לפי פופולריות והסרת כפולים לפי title+artist
+  const seen = new Set();
+  const uniq = [];
+  for (const t of filtered.sort((a,b)=>(b.popularity||0)-(a.popularity||0))){
+    const title = t.name;
+    const primary = t.artists?.[0]?.name || artistName;
+    const key = canonicalKey(title, primary);
+    if (!seen.has(key)){
+      seen.add(key);
+      uniq.push({ title, artist: primary });
+    }
+  }
+  return uniq;
 }
 
 export default async function handler(req,res){
@@ -104,65 +149,181 @@ export default async function handler(req,res){
 
     const token = await getSpotifyAppToken();
 
-    // ננרמל את הסידס לפי ספוטיפיי (מתקן גם Artist/Title הפוכים)
+    // נרמול סידס לספוטיפיי
     const normalizedSeeds = [];
-    const allowedArtists = new Set();
     for (const raw of seedsRaw){
       const norm = await normalizeSeed(token, raw);
       if (norm && norm.title && norm.artist){
-        normalizedSeeds.push(`${norm.title} - ${norm.artist}`);
-        allowedArtists.add(norm.artist.toLowerCase().trim());
+        normalizedSeeds.push(norm);
       }
     }
 
+    // סדר אמנים לפי הופעתם בסידס (יוניק)
+    const artistOrder = [];
+    const artistSeen = new Set();
+    normalizedSeeds.forEach(({artist})=>{
+      const key = artist.toLowerCase().trim();
+      if (!artistSeen.has(key)){ artistSeen.add(key); artistOrder.push(artist); }
+    });
+
     // חייבים לפחות 5 אמנים שונים
-    if (allowedArtists.size < 5) {
+    if (artistOrder.length < 5) {
       return res.status(400).json({ error: "יש צורך בלפחות 5 זמרים/אמנים שונים ברשימת השירים. ודא שהפורמט הוא Title - Artist ושמדובר בשירים קיימים." });
     }
 
-    // יעד לפי מספר הסידס (עם מינימום קשיח)
+    // יעד לפי מספר הסידס (עם מינימום קשיח 20)
     const targetSoft = seedsRaw.length <= 7 ? randInt(25,40) : randInt(35,50);
     const targetTotal = Math.max(targetSoft, TARGET_MIN);
 
-    // אוסף מועמדים: קודם כל הסידס, אח״כ טראקים של כל אמן מספוטיפיי
-    const seen = new Set();
-    const candidates = [];
+    // בנה דליים לכל אמן: תחילה הסידס שלו, אח״כ טראקים פופולריים
+    const buckets = {};
+    const pickedKeys = new Set();
 
-    // סידס קודם – עם ניקוי כפילויות
-    for (const s of normalizedSeeds){
-      const [t,a] = splitLines(s)[0].split(" - ");
-      const key = canonicalKey(t,a);
-      if (!seen.has(key)){
-        seen.add(key);
-        candidates.push(s);
+    for (const artist of artistOrder){
+      buckets[artist] = [];
+
+      // 1) סידס של האמן
+      normalizedSeeds
+        .filter(s => s.artist.toLowerCase().trim() === artist.toLowerCase().trim())
+        .forEach(s => {
+          const key = canonicalKey(s.title, s.artist);
+          if (!pickedKeys.has(key)){
+            pickedKeys.add(key);
+            buckets[artist].push(`${s.title} - ${s.artist}`);
+          }
+        });
+
+      // 2) טראקים נוספים לאמן
+      const extra = await fetchArtistTracks(token, artist);
+      for (const t of extra){
+        const key = canonicalKey(t.title, t.artist);
+        if (!pickedKeys.has(key)){
+          pickedKeys.add(key);
+          buckets[artist].push(`${t.title} - ${t.artist}`);
+        }
       }
     }
 
-    // הוסף טראקים לכל אמן עד שיש די (ניקח פופולרי, נערבב בסוף)
-    for (const artistLower of allowedArtists){
-      const artistName = [...allowedArtists].find(a => a === artistLower); // lowercase already
-      // אבל לשם התצוגה נחפש את הקייס האמיתי מתוך הסידס הנורמליים
-      const displayName = normalizedSeeds
-        .map(s => s.split(" - ")[1])
-        .find(a => a.toLowerCase().trim() === artistLower) || artistLower;
-
-      const tracks = await fetchArtistTracks(token, displayName);
-      for (const tr of tracks){
-        const title = tr.name;
-        const primary = tr.artists?.[0]?.name || displayName;
-        const key = canonicalKey(title, primary);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        candidates.push(`${title} - ${primary}`);
-        if (candidates.length >= targetTotal + 30) break; // בופר קטן לפני ערבוב/חיתוך
-      }
-      if (candidates.length >= targetTotal + 30) break;
+    // כמות זרעים לכל אמן
+    const seedCountByArtist = {};
+    for (const artist of artistOrder){
+      seedCountByArtist[artist] = normalizedSeeds.filter(s => s.artist.toLowerCase().trim() === artist.toLowerCase().trim()).length;
     }
 
-    // ערבוב, הקפד שהסידס ישארו בפנים (הם כבר בפנים בהתחלה)
-    const seedsCount = normalizedSeeds.length;
-    const rest = shuffle(candidates.slice(seedsCount));
-    const final = candidates.slice(0,seedsCount).concat(rest).slice(0, targetTotal);
+    // הקצאת מכסות מאוזנת:
+    // מתחילים מכמות הזרעים, ואז round-robin מוסיפים אחד-אחד עד targetTotal
+    const quotas = {};
+    const usedCounts = {};
+    let totalQuota = 0;
+
+    artistOrder.forEach(a => {
+      quotas[a] = Math.min(buckets[a].length, seedCountByArtist[a]); // לפחות הזרעים
+      usedCounts[a] = 0;
+      totalQuota += quotas[a];
+    });
+
+    // כמה נותר להקצות
+    let remaining = Math.max(targetTotal - totalQuota, 0);
+
+    // Round-robin הגדלת מכסות, מנסה להגיע לאיזון (בערך targetTotal/numArtists)
+    const perArtistIdeal = Math.ceil(targetTotal / artistOrder.length);
+
+    while (remaining > 0) {
+      let progressed = false;
+      for (const a of artistOrder){
+        if (remaining <= 0) break;
+        const cap = Math.min(perArtistIdeal, buckets[a].length);
+        if (quotas[a] < cap){
+          quotas[a] += 1;
+          remaining -= 1;
+          progressed = true;
+        }
+      }
+      // אם עדיין נשאר—חלק עוד סבב לכל מי שיש לו מלאי
+      if (!progressed) {
+        for (const a of artistOrder){
+          if (remaining <= 0) break;
+          if (quotas[a] < buckets[a].length){
+            quotas[a] += 1;
+            remaining -= 1;
+            progressed = true;
+          }
+        }
+      }
+      if (!progressed) break; // אין מה להוסיף
+    }
+
+    // בנייה מאוזנת עם מניעת רצפים ארוכים
+    const cursors = {};
+    artistOrder.forEach(a => { cursors[a] = 0; });
+
+    const final = [];
+    let lastArtist = null;
+    let consec = 0;
+
+    function canPick(artist){
+      if (usedCounts[artist] >= quotas[artist]) return false;
+      if (cursors[artist] >= buckets[artist].length) return false;
+      // מניעת רצף
+      if (lastArtist && lastArtist.toLowerCase() === artist.toLowerCase() && consec >= MAX_CONSEC) return false;
+      return true;
+    }
+
+    // לולאת interleave
+    while (final.length < targetTotal) {
+      let took = false;
+
+      for (const a of artistOrder){
+        if (final.length >= targetTotal) break;
+
+        // אם אסור לפי MAX_CONSEC, ננסה לחפש אמן אחר; אם כולם חסומים, נרפה את המגבלה לסבב הזה
+        if (!canPick(a)) continue;
+
+        // בחר טRack הבא מהדלי של האמן
+        const track = buckets[a][cursors[a]];
+        cursors[a] += 1;
+        usedCounts[a] += 1;
+
+        final.push(track);
+
+        if (!lastArtist || lastArtist.toLowerCase() !== a.toLowerCase()) {
+          lastArtist = a;
+          consec = 1;
+        } else {
+          consec += 1;
+        }
+
+        took = true;
+      }
+
+      if (!took) {
+        // ייתכן שכולם נחסמו בגלל MAX_CONSEC—נרפה בסבב אחד כדי לא להתקע
+        let relaxedTook = false;
+        for (const a of artistOrder){
+          if (final.length >= targetTotal) break;
+          if (usedCounts[a] >= quotas[a]) continue;
+          if (cursors[a] >= buckets[a].length) continue;
+
+          const track = buckets[a][cursors[a]];
+          cursors[a] += 1;
+          usedCounts[a] += 1;
+          final.push(track);
+
+          if (!lastArtist || lastArtist.toLowerCase() !== a.toLowerCase()) {
+            lastArtist = a;
+            consec = 1;
+          } else {
+            consec += 1;
+          }
+          relaxedTook = true;
+          break;
+        }
+        if (!relaxedTook) break; // אין יותר מה להוסיף
+      }
+    }
+
+    // ערבוב קל של ה"non-seeds" בתוך האמן עצמו כבר בוצע לפי פופולריות;
+    // כאן הרשימה כבר מאוזנת בין אמנים ובד"כ בלי רצפים ארוכים.
 
     return res.status(200).json({
       playlistText: final.join("\n"),
