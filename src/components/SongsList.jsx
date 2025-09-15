@@ -1,20 +1,14 @@
-export default function SongsList({ songs, getPlaylist }) {
-  return (
-    <section>
-      <h2>Your songs:</h2>
-      <ul className="ingredients-list">
-        {songs.map((s, idx) => <li key={idx}>{s}</li>)}
-      </ul>
+// src/components/SongsList.jsx
+import React from 'react';
 
-      {songs.length >= 5 && (
-        <div className="get-recipe-container">
-          <div>
-            <h3>Ready for a playlist?</h3>
-            <p>Generate a playlist from your songs.</p>
-          </div>
-          <button onClick={getPlaylist}>Generate Playlist</button>
-        </div>
-      )}
+export default function SongsList({ songs }) {
+  return (
+    <section className="card">
+      <h2>Your songs:</h2>
+      <ul className="ingredients-list" style={{textAlign:'left', maxWidth:700, margin:'8px auto'}}>
+        {songs.map((s, idx) => <li key={idx} style={{marginBottom:6}}>{s}</li>)}
+      </ul>
+      <p style={{color:'#6b7280', fontSize:'0.9rem'}}>You added {songs.length} songs.</p>
     </section>
   );
 }

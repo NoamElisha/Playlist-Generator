@@ -13,28 +13,28 @@ function isValidPlaylistName(name) {
   if (!name) return false;
   const trimmed = name.trim();
   if (trimmed.length === 0) return false;
-  if (trimmed.length > 100) return false; // conservative cap
-  // disallow control characters (0x00-0x1F and 0x7F)
+  if (trimmed.length > 100) return false;
   if (/[\x00-\x1F\x7F]/.test(trimmed)) return false;
   return true;
 }
 
 export default function Body() {
-  const [songs, setSongs] = React.useState([]); // start empty
+  const [songs, setSongs] = React.useState([]);
   const [playlistText, setPlaylistText] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
   const [playlistName, setPlaylistName] = React.useState('AI Playlist');
-  const [lastParams, setLastParams] = React.useState(null); // {artists,total}
+  const [lastParams, setLastParams] = React.useState(null);
 
   async function getPlaylist() {
     try {
       setError('');
       setLoading(true);
-      // pick randoms
+      // choose random artist count (5-8) and total tracks (20-40)
       const desiredArtistsCount = randInt(5, 8);
       const desiredTotal = randInt(20, 40);
       setLastParams({ desiredArtistsCount, desiredTotal });
+
       console.log('▶ Sending songs to server (playlist-claude):', songs, desiredArtistsCount, desiredTotal);
       const data = await getPlaylistFromChefClaude(songs, desiredArtistsCount, desiredTotal);
       console.log('◀ Received from server:', data);
@@ -58,7 +58,7 @@ export default function Body() {
   }
 
   return (
-    <main style={{maxWidth:900, margin:'0 auto', padding:20}}>
+    <main style={{maxWidth:980, margin:'0 auto', padding:24}}>
       <div style={{display:'flex', justifyContent:'center', marginBottom:16}}>
         <input
           value={playlistName}
@@ -68,7 +68,7 @@ export default function Body() {
         />
       </div>
 
-      <form onSubmit={addSong} className="add-ingredient-form">
+      <form onSubmit={addSong} className="add-ingredient-form card">
         <input name="song" placeholder='Example: "Bad Guy - Billie Eilish"' aria-label="Add song (Title - Artist)" />
         <button type="submit">Add</button>
       </form>
@@ -79,7 +79,7 @@ export default function Body() {
         </p>
       )}
 
-      <SongsList songs={songs} getPlaylist={getPlaylist} />
+      <SongsList songs={songs} />
 
       <div style={{display:'flex', justifyContent:'center', gap:12, marginTop:12}}>
         <button
@@ -90,7 +90,7 @@ export default function Body() {
           Generate Playlist
         </button>
         <div style={{alignSelf:'center', color:'#6b7280'}}>
-          {lastParams ? `Wanted ${lastParams.desiredArtistsCount} artists, ${lastParams.desiredTotal} total` : null}
+          {lastParams ? `Requested ${lastParams.desiredArtistsCount} artists, ${lastParams.desiredTotal} total` : null}
         </div>
       </div>
 

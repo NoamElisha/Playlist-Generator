@@ -2,15 +2,67 @@
 // Guarantees at least desiredTotal final items (including seeds) and requests Claude to include at least desiredArtistsCount different artists.
 
 const SYSTEM_PROMPT = `
-You are an assistant that receives a list of EXACTLY 5+ seed songs (each "Title - Artist").
-Your task:
-- Return a final playlist that INCLUDES the original seed songs AND a number of additional songs so that the final playlist contains the requested total number of songs.
-- Ensure the final playlist contains at least the requested number of DISTINCT ARTISTS.
-- Return ONLY plain newline-separated lines, each in this format exactly:
+You are an assistant that receives:
+- a list of seed songs (each line in the exact format: Title - Artist), and
+- two integers: REQUESTED_TOTAL (number of lines the final playlist should contain) and REQUESTED_DISTINCT_ARTISTS (minimum count of distinct artists required).
+
+Your job:
+- Produce a final playlist as plain text with EXACTLY REQUESTED_TOTAL lines if possible. Each line MUST be exactly in this format:
     Title - Artist
-- Do NOT include numbering, headings, explanations, or any other text.
-- Try not to repeat the exact same Title - Artist line.
+  (ASCII hyphen `-` with one space on each side; no numbering, no bullets, no headings.)
+- The final playlist MUST INCLUDE the original seed songs (the seeds provided) somewhere in the list (they can appear in any order).
+- The final playlist SHOULD have at least REQUESTED_DISTINCT_ARTISTS distinct artists (case-insensitive). Try to maximize distinct artists to reach that target.
+- Maintain genre/vibe consistency: prefer songs in the same musical genre/vibe as the seed songs. If seeds contain mixed genres, use the majority genre; if there is no clear majority, use the genre of the first seed.
+- Prefer (but do not be forced to repeat) other songs by the same artists appearing in the seeds — include those if they fit the genre/vibe and help reach the totals.
+- Do NOT repeat the same Title - Artist line more than once. Avoid near-duplicates (e.g., the same song with minor alternate punctuation).
+- If a requested constraint cannot be fully met (for example Claude cannot find enough same-genre distinct artists), return the best possible list you can while still following the formatting rules — **do not** add explanations, warnings, or any lines that are not "Title - Artist".
+- Do not include release years, labels, links, commentary, numbering, blank lines, or any JSON or metadata — only plain lines "Title - Artist".
+- If a song features other performers, format the artist portion naturally, e.g.:
+    Blinding Lights - The Weeknd ft. Artist Name
+- Use common/recognized song titles (choose the most standard, widely-known title formatting).
+- Keep output concise and machine-parsable: exact ASCII hyphen as separator, one song per line, no extra characters around the lines.
+
+Edge behavior (strict instructions for fallback):
+- Aim to output exactly REQUESTED_TOTAL lines. If you cannot reach that number while respecting genre/vibe and non-duplication, output as many valid lines as you can (still obey the single-line "Title - Artist" rule) — no commentary. The calling code will handle warnings or retries.
+- When instructed to include N distinct artists but the seeds provide fewer artists, prioritize adding songs by new artists of the same vibe until reaching N, then fill remaining lines with best matches (still avoiding duplicate Title - Artist pairs).
+
+Input placeholders:
+- The caller will inject the seed lines and the numeric values for REQUESTED_TOTAL and REQUESTED_DISTINCT_ARTISTS in the user message. Do not echo or repeat those numeric placeholders; just produce the playlist output as specified.
+
+Example (seed input, for illustration only — do NOT print anything like "Example:" in your output):
+  Seeds: Shape of You - Ed Sheeran | Perfect - Ed Sheeran | Someone Like You - Adele | Rolling in the Deep - Adele | Closer - The Chainsmokers
+  REQUESTED_TOTAL = 25
+  REQUESTED_DISTINCT_ARTISTS = 7
+
+Valid output (exact format the caller expects — no extra text):
+Shape of You - Ed Sheeran
+Perfect - Ed Sheeran
+Someone Like You - Adele
+Rolling in the Deep - Adele
+Closer - The Chainsmokers
+Thinking Out Loud - Ed Sheeran
+Photograph - Ed Sheeran
+Set Fire to the Rain - Adele
+Make You Feel My Love - Adele
+Don't Let Me Down - The Chainsmokers ft. Daya
+Stay - Zedd & Alessia Cara
+Say You Won't Let Go - James Arthur
+Love Yourself - Justin Bieber
+Jealous - Labrinth
+When I Was Your Man - Bruno Mars
+Locked Out of Heaven - Bruno Mars
+Treasure - Bruno Mars
+Too Good at Goodbyes - Sam Smith
+Lay Me Down - Sam Smith
+Pompeii - Bastille
+Demons - Imagine Dragons
+Believer - Imagine Dragons
+Uptown Funk - Mark Ronson ft. Bruno Mars
+Can't Feel My Face - The Weeknd
+Blinding Lights - The Weeknd
 `;
+
+const MAX_RETRIES = 2;
 
 function linesFromText(text) {
   return (text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -52,58 +104,33 @@ async function callClaude(messages) {
     throw err;
   }
   const data = await res.json();
-  // extract text robustly
-  let text = '';
-  if (data?.content?.[0]?.text) text = data.content[0].text;
-  else if (typeof data.completion === 'string' && data.completion.trim()) text = data.completion;
-  else if (Array.isArray(data.completion?.parts)) text = data.completion.parts.join('');
-  else if (Array.isArray(data.messages) && data.messages.length) text = data.messages.map(m => m.text || m.content || '').join('\n');
-  else text = JSON.stringify(data);
-  return text;
+  // robust extraction (various Claude response shapes)
+  if (data?.content?.[0]?.text) return data.content[0].text;
+  if (typeof data.completion === 'string' && data.completion.trim()) return data.completion;
+  if (Array.isArray(data.completion?.parts)) return data.completion.parts.join('');
+  if (Array.isArray(data.messages) && data.messages.length) return data.messages.map(m => m.text || m.content || '').join('\n');
+  return JSON.stringify(data);
 }
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { songs, desiredArtistsCount, desiredTotal } = req.body ?? {};
-    console.log('playlist-claude: received body:', { songsLength: Array.isArray(songs) ? songs.length : undefined, desiredArtistsCount, desiredTotal });
+    const { songs, desiredArtistsCount = 6, desiredTotal = 25 } = req.body ?? {};
+    console.log('playlist-claude: request', { songsLength: Array.isArray(songs) ? songs.length : undefined, desiredArtistsCount, desiredTotal });
 
-    if (!songs || !Array.isArray(songs)) {
-      return res.status(400).json({ error: 'Please provide an array of songs.' });
+    if (!Array.isArray(songs) || songs.length === 0) {
+      return res.status(400).json({ error: 'Please provide songs array.' });
     }
 
-    const cleanedSeeds = songs.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean).slice(0, 20);
-    if (cleanedSeeds.length < 5) {
-      return res.status(400).json({ error: 'Please provide at least 5 seed songs.' });
-    }
+    // keep first 5 seeds (or up to 5). But accept more seeds.
+    const seeds = songs.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean).slice(0, 20);
+    if (seeds.length < 5) return res.status(400).json({ error: 'Please provide at least 5 seed songs.' });
 
-    // sanitize requested numbers and clamp
-    const reqArtists = Number.isInteger(desiredArtistsCount) ? Math.max(1, Math.min(20, desiredArtistsCount)) : 5;
-    const reqTotal = Number.isInteger(desiredTotal) ? Math.max(10, Math.min(200, desiredTotal)) : 20;
+    const targetArtists = Math.max(1, Math.min(50, Number(desiredArtistsCount)));
+    const targetTotal = Math.max(5, Math.min(500, Number(desiredTotal)));
 
-    console.log('playlist-claude: seeds (first 10):', cleanedSeeds.slice(0,10));
-    console.log('playlist-claude: target total', reqTotal, 'min distinct artists', reqArtists);
-
-    // Build the initial user prompt including constraints
-    const initialUser = {
-      role: 'user',
-      content: `Here are seed songs (Title - Artist): ${cleanedSeeds.slice(0,5).join(' | ')}.
-Please produce a final playlist that:
-- INCLUDES the provided seed songs (they must appear in the final list).
-- Contains exactly or at least ${reqTotal} lines (Title - Artist).
-- Contains at least ${reqArtists} distinct artists.
-Return ONLY plain lines "Title - Artist" with no numbering or commentary.`
-    };
-
-    // call Claude (single call + small follow-ups handled server-side if needed)
-    const rawText = await callClaude([initialUser]);
-    console.log('playlist-claude: claude returned raw length', rawText ? rawText.length : 0);
-
-    const returnedLines = linesFromText(rawText);
-    console.log('playlist-claude: claude returned lines count:', returnedLines.length);
-
-    // Build final list, preserving seeds and de-duplicating
+    // set of canonical keys to avoid duplicates
     const seen = new Set();
     const final = [];
 
@@ -116,39 +143,83 @@ Return ONLY plain lines "Title - Artist" with no numbering or commentary.`
       return true;
     };
 
-    // ensure seeds are present (first)
-    for (const s of cleanedSeeds.slice(0,5)) addLine(s);
+    // always add provided seeds first (preserve)
+    for (let i = 0; i < Math.min(5, seeds.length); i++) addLine(seeds[i]);
 
-    // add suggestions from Claude in order
-    for (const l of returnedLines) {
-      if (final.length >= reqTotal) break;
-      addLine(l);
+    // helper to compute distinct artists in final
+    const currentArtistsSet = () => {
+      const s = new Set();
+      for (const l of final) {
+        const p = parseLineToPair(l);
+        if (p?.artist) s.add(p.artist.toLowerCase());
+      }
+      return s;
+    };
+
+    // initial prompt (first call)
+    const seedFive = seeds.slice(0,5).join(' | ');
+    let userMessage = { role: 'user', content: `Here are seed songs (Title - Artist): ${seedFive}. Please produce ${targetTotal} lines (Title - Artist) in the same vibe/genre, and include at least ${targetArtists} distinct artists. Return ONLY plain newline lines "Title - Artist". Make sure the original seeds appear in the final list.` };
+
+    let attempt = 0;
+    // iterative loop: call Claude, parse, check distinct artists and totals, ask follow-ups if needed
+    while ((final.length < targetTotal || currentArtistsSet().size < targetArtists) && attempt <= MAX_RETRIES) {
+      attempt++;
+      console.log(`playlist-claude: attempt ${attempt} - have ${final.length} lines, ${currentArtistsSet().size} distinct artists; need total ${targetTotal}, artists ${targetArtists}`);
+      const raw = await callClaude([userMessage]);
+      console.log('playlist-claude: raw length', raw ? raw.length : 0);
+      const lines = linesFromText(raw);
+      console.log('playlist-claude: parsed lines', lines.length);
+
+      // add lines in order until targetTotal reached
+      for (const l of lines) {
+        if (final.length >= targetTotal) break;
+        addLine(l);
+      }
+
+      // recompute missing counts
+      const artistsNow = currentArtistsSet();
+      const missingArtists = Math.max(0, targetArtists - artistsNow.size);
+      const missingTotal = Math.max(0, targetTotal - final.length);
+
+      // if we still miss distinct artists, prepare a follow-up prompt asking for new artists only
+      if (missingArtists > 0 || missingTotal > 0) {
+        // build exclude lists
+        const excludeTitles = Array.from(seen).slice(0,200).map(k => k.split('|||')[0]).filter(Boolean);
+        const excludeArtists = Array.from(artistsNow).slice(0,200);
+
+        // ask for ONLY new artists / songs
+        const followUp = `I still need ${missingTotal} more songs to reach ${targetTotal} total, and at least ${missingArtists} additional DISTINCT ARTISTS.
+Return ONLY lines "Title - Artist". Do NOT repeat any of these titles or artists (exclude):
+Artists to exclude:
+${excludeArtists.join('\n')}
+Titles to exclude:
+${excludeTitles.join('\n')}
+Focus on songs in the same genre/vibe as the seeds and prioritize songs by new artists (not in the exclude list).`;
+        userMessage = { role: 'user', content: followUp };
+        // loop will repeat
+      } else {
+        // we have enough—break
+        break;
+      }
     }
 
-    // If not enough, attempt simple fallback: repeat more seeds/details (if Claude underproduced)
-    if (final.length < reqTotal) {
-      console.log('playlist-claude: not enough lines from Claude, attempting lightweight augmentation with seeds variations');
-      for (const s of cleanedSeeds) {
-        if (final.length >= reqTotal) break;
+    // final safety: if still not enough, pad by repeating seeds variants (worst-case)
+    if (final.length < targetTotal) {
+      console.log('playlist-claude: padding with seeds variants');
+      for (const s of seeds) {
+        if (final.length >= targetTotal) break;
         addLine(s);
       }
     }
 
-    const playlistText = final.slice(0, reqTotal).join('\n');
-    // compute distinct artists
-    const artists = new Set(final.map(l => {
-      const p = parseLineToPair(l);
-      return p?.artist?.toLowerCase?.() || '';
-    }).filter(Boolean));
-    const distinctArtistsCount = artists.size;
+    const playlistText = final.slice(0, targetTotal).join('\n');
+    const distinctArtistsCount = currentArtistsSet().size;
+    const success = final.length >= targetTotal && distinctArtistsCount >= targetArtists;
+    const warning = success ? null : `Generated ${final.length} items with ${distinctArtistsCount} distinct artists (requested ${targetTotal} and ${targetArtists}).`;
 
-    const success = final.length >= reqTotal && distinctArtistsCount >= reqArtists;
-    const warning = success ? null : `Generated ${final.length} items with ${distinctArtistsCount} distinct artists (requested total ${reqTotal} and ${reqArtists} distinct artists).`;
+    console.log('playlist-claude: finished:', { count: final.length, distinctArtistsCount, success });
 
-    console.log('playlist-claude: returning final count:', final.length, 'distinctArtists:', distinctArtistsCount);
-
-    return res.status(200).json({ playlistText, count: final.length, success, distinctArtistsCount, requested: { reqTotal, reqArtists }, warning });
-
+    return res.status(200).json({ playlistText, count: final.length, distinctArtistsCount, success, warning });
   } catch (err) {
     console.error('playlist-claude error:', err);
     return res.status(500).json({ error: err?.message || String(err) });
