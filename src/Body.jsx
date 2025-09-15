@@ -4,9 +4,14 @@ import SongsList from "./components/SongsList";
 import ClaudePlaylist from "./components/ClaudePlaylist";
 import AddToSpotifyButton from "./components/AddToSpotifyButton";
 import { getPlaylistFromChefClaude } from "./ai";
+import TypeaheadInput from "./components/TypeaheadInput";
+
 
 function parseArtist(line) {
-  const parts = (line || "").split(/[-–—]/).map(s => s.trim()).filter(Boolean);
+  const parts = (line || "")
+    .split(/[-–—]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
   return parts.length >= 2 ? parts.slice(1).join("-").trim() : "";
 }
 function isValidPlaylistName(name) {
@@ -41,10 +46,15 @@ export default function Body() {
 
       // לפחות 5 אמנים שונים
       const uniqArtists = new Set(
-        songs.map(parseArtist).filter(Boolean).map(a => a.toLowerCase())
+        songs
+          .map(parseArtist)
+          .filter(Boolean)
+          .map((a) => a.toLowerCase())
       );
       if (uniqArtists.size < 5) {
-        setError("יש צורך בלפחות 5 זמרים/אמנים שונים ברשימה. הוסף אמנים נוספים ונסה שוב.");
+        setError(
+          "יש צורך בלפחות 5 זמרים/אמנים שונים ברשימה. הוסף אמנים נוספים ונסה שוב."
+        );
         return;
       }
 
@@ -54,7 +64,6 @@ export default function Body() {
 
       // ❌ לא מציגים שום warning אם חזר פחות מהיעד
       // if (data.warning) setError(data.warning);
-
     } catch (err) {
       console.error("getPlaylist error:", err);
       setError(err.message || String(err));
@@ -72,11 +81,13 @@ export default function Body() {
       setError("ניתן להזין עד 12 שירים.");
       return;
     }
-    setSongs(prev => [...prev, song]);
+    setSongs((prev) => [...prev, song]);
     e.target.reset();
   }
 
-  const finalPlaylistName = isValidPlaylistName(playlistName) ? playlistName.trim() : "AI Playlist";
+  const finalPlaylistName = isValidPlaylistName(playlistName)
+    ? playlistName.trim()
+    : "AI Playlist";
 
   return (
     <main style={{ maxWidth: 980, margin: "0 auto", padding: 24 }}>
@@ -88,10 +99,13 @@ export default function Body() {
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
           <input
             value={playlistName}
-            onChange={e => setPlaylistName(e.target.value)}
+            onChange={(e) => setPlaylistName(e.target.value)}
             placeholder="לדוגמה: Roadtrip Vibes"
             style={{
-              padding: 10, borderRadius: 8, border: "1px solid #e5e7eb", flex: 1
+              padding: 10,
+              borderRadius: 8,
+              border: "1px solid #e5e7eb",
+              flex: 1,
             }}
           />
           <span style={{ color: "#6b7280", fontSize: ".9rem" }}>
@@ -100,24 +114,73 @@ export default function Body() {
         </div>
       </div>
 
-      <form onSubmit={addSong} className="add-ingredient-form card">
-        <input
-          name="song"
-          placeholder='Example: "Bad Guy - Billie Eilish"'
-          aria-label="Add song (Title - Artist)"
-        />
-        <button type="submit">Add</button>
-      </form>
+      <div
+        className="card"
+        style={{ display: "flex", flexDirection: "column", gap: 10 }}
+      >
+        <label style={{ display: "block", fontWeight: 600, marginBottom: 4 }}>
+          חפש והוסף שיר (אוטוקומפליט)
+        </label>
+        <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <TypeaheadInput
+              disabled={songs.length >= 12}
+              onAdd={(line) => {
+                // מוודא שלא עוברים 12 ושאין כפילויות א-ב’
+                if (songs.length >= 12) {
+                  setError("ניתן להזין עד 12 שירים.");
+                  return;
+                }
+                if (
+                  songs.some(
+                    (s) => s.toLowerCase().trim() === line.toLowerCase().trim()
+                  )
+                ) {
+                  setError("השיר כבר קיים ברשימה.");
+                  return;
+                }
+                setSongs((prev) => [...prev, line]);
+                setError("");
+              }}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              // אופציונלי: כפתור “נקה חיפוש” אם תרצה לוגיקה נוספת
+            }}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 8,
+              border: "1px solid #e5e7eb",
+              background: "#fff",
+            }}
+          >
+            ניקוי
+          </button>
+        </div>
+        <p style={{ color: "#6B7280", margin: 0, fontSize: ".9rem" }}>
+          בחירה מהתוצאות מוסיפה אוטומטית בפורמט <code>Title - Artist</code>
+        </p>
+      </div>
 
       {songs.length === 0 && (
         <p style={{ color: "#6B7280", marginTop: 12 }}>
-          הוסף לפחות 5 שירים (בפורמט <code>Title - Artist</code>) ואז לחץ Generate Playlist.
+          הוסף לפחות 5 שירים (בפורמט <code>Title - Artist</code>) ואז לחץ
+          Generate Playlist.
         </p>
       )}
 
       <SongsList songs={songs} />
 
-      <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 12 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          gap: 12,
+          marginTop: 12,
+        }}
+      >
         <button
           onClick={getPlaylist}
           disabled={songs.length < 5}
@@ -127,7 +190,7 @@ export default function Body() {
             background: "#111827",
             color: "#fff",
             border: "none",
-            cursor: songs.length < 5 ? "not-allowed" : "pointer"
+            cursor: songs.length < 5 ? "not-allowed" : "pointer",
           }}
         >
           Generate Playlist
@@ -151,7 +214,7 @@ export default function Body() {
             display: "flex",
             gap: 10,
             alignItems: "center",
-            boxShadow: "0 10px 20px rgba(2,6,23,0.04)"
+            boxShadow: "0 10px 20px rgba(2,6,23,0.04)",
           }}
         >
           <span style={{ fontSize: "1.25rem" }}>⚠️</span>
@@ -162,8 +225,13 @@ export default function Body() {
       {playlistText && <ClaudePlaylist playlistText={playlistText} />}
 
       {playlistText && (
-        <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
-          <AddToSpotifyButton playlistText={playlistText} playlistName={finalPlaylistName} />
+        <div
+          style={{ display: "flex", justifyContent: "center", marginTop: 12 }}
+        >
+          <AddToSpotifyButton
+            playlistText={playlistText}
+            playlistName={finalPlaylistName}
+          />
         </div>
       )}
     </main>
