@@ -28,6 +28,7 @@ export default function Body() {
   async function getPlaylist() {
     try {
       setError("");
+
       // בדיקת 5–12
       if (songs.length < 5) {
         setError("נא להזין לפחות 5 שירים.");
@@ -37,8 +38,11 @@ export default function Body() {
         setError("ניתן להזין עד 12 שירים.");
         return;
       }
+
       // לפחות 5 אמנים שונים
-      const uniqArtists = new Set(songs.map(parseArtist).filter(Boolean).map(a => a.toLowerCase()));
+      const uniqArtists = new Set(
+        songs.map(parseArtist).filter(Boolean).map(a => a.toLowerCase())
+      );
       if (uniqArtists.size < 5) {
         setError("יש צורך בלפחות 5 זמרים/אמנים שונים ברשימה. הוסף אמנים נוספים ונסה שוב.");
         return;
@@ -47,10 +51,10 @@ export default function Body() {
       setLoading(true);
       const data = await getPlaylistFromChefClaude(songs);
       setPlaylistText(data.playlistText || "");
-      if (data.warning) {
-        // נציג כאזהרה רכה, לא כשגיאה חוסמת
-        setError(data.warning);
-      }
+
+      // ❌ לא מציגים שום warning אם חזר פחות מהיעד
+      // if (data.warning) setError(data.warning);
+
     } catch (err) {
       console.error("getPlaylist error:", err);
       setError(err.message || String(err));
@@ -132,21 +136,24 @@ export default function Body() {
 
       {loading && <p>Loading…</p>}
 
-      {/* הודעת שגיאה/אזהרה מודרנית */}
+      {/* הודעת שגיאה מודרנית */}
       {error && (
-        <div className="alert" style={{
-          margin: "12px auto",
-          padding: "12px 14px",
-          borderRadius: 10,
-          border: "1px solid #fecaca",
-          background: "#fff1f2",
-          color: "#7f1d1d",
-          maxWidth: 780,
-          display: "flex",
-          gap: 10,
-          alignItems: "center",
-          boxShadow: "0 10px 20px rgba(2,6,23,0.04)"
-        }}>
+        <div
+          className="alert"
+          style={{
+            margin: "12px auto",
+            padding: "12px 14px",
+            borderRadius: 10,
+            border: "1px solid #fecaca",
+            background: "#fff1f2",
+            color: "#7f1d1d",
+            maxWidth: 780,
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            boxShadow: "0 10px 20px rgba(2,6,23,0.04)"
+          }}
+        >
           <span style={{ fontSize: "1.25rem" }}>⚠️</span>
           <span>{error}</span>
         </div>
