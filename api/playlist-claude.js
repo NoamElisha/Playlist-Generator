@@ -3,16 +3,27 @@
 
 const SYSTEM_PROMPT = `
 You are an assistant that receives:
-- a list of seed songs (each line in the exact format: Title - Artist),
+- a list of 5 seed songs (each line exactly "Title - Artist"),
 - integers REQUESTED_TOTAL and REQUESTED_DISTINCT_ARTISTS.
 
-Return ONLY newline-separated lines exactly in this format:
-Title - Artist
+Your strict tasks:
+1. Always include the seed songs in the final playlist.
+2. Return ONLY plain newline-separated lines in this exact format: Title - Artist
+   - Do NOT return any other text, headings, numbering, comments, summaries, or explanations.
+3. The final playlist MUST contain between 20 and 40 songs total (based on REQUESTED_TOTAL).
+4. The final playlist MUST contain at least REQUESTED_DISTINCT_ARTISTS distinct artists,
+   but never more than 8 distinct artists.
+5. If the user provides fewer than REQUESTED_DISTINCT_ARTISTS seed artists,
+   complete the missing artists with others from the same genre and language as the majority of seeds.
+6. Do NOT repeat the same Title - Artist line.
+7. Only return real, existing songs with 100% certainty. Avoid hallucinations or made-up titles.
+8. If the seeds are mostly Hebrew songs, ALL generated songs must be Hebrew. 
+   If seeds are mostly English songs, ALL generated songs must be English.
+9. Prefer songs from the same genre/musical vibe as the seeds. Do NOT mix genres.
+10. Always balance so that each distinct artist has at least 2–3 songs in the list.
 
-Do NOT include any headings, numbering, explanations, summaries, or meta text.
-Do NOT include any line that is not "Title - Artist".
-Prefer songs that match the seeds' language (Hebrew vs other) and prefer same-genre/vibe.
-Include the original seeds somewhere in the final list. Do not repeat identical Title - Artist pairs.
+Remember:
+- Absolutely no extra output except valid "Title - Artist" lines.
 `;
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
