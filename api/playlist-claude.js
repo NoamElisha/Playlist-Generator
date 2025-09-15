@@ -1,63 +1,128 @@
-// api/playlist-claude.js
+// /api/playlist-claude.js
 import Anthropic from "@anthropic-ai/sdk";
 
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-3-haiku-20240307"; // <<< מודל תקין
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-function isHebrewText(s) {
-  return /[\u0590-\u05FF]/.test(s);
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+function splitLines(text) {
+  return (text || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+}
+function parseLineToPair(line) {
+  const parts = line.split(/[-–—]/).map(p => p.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    const title = parts[0].replace(/^["“”']+|["“”']+$/g, "");
+    const artist = parts.slice(1).join("-").replace(/^["“”']+|["“”']+$/g, "");
+    if (title && artist) return { title, artist };
+  }
+  return null;
+}
+function canonicalKey(t, a) {
+  return `${(t || "").trim().toLowerCase()}|||${(a || "").trim().toLowerCase()}`;
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { songs } = req.body;
+    const { songs } = req.body ?? {};
+    if (!Array.isArray(songs)) {
+      return res.status(400).json({ error: "נא להזין מערך שירים בפורמט Title - Artist" });
+    }
 
-    if (!Array.isArray(songs) || songs.length === 0)
-      return res.status(400).json({ error: "You must provide an array of songs." });
+    // ננקה קלט
+    const seedsRaw = songs.map(s => (typeof s === "string" ? s.trim() : "")).filter(Boolean);
 
-    if (songs.length < 5) return res.status(400).json({ error: "Please provide at least 5 seed songs." });
-    if (songs.length > 12) return res.status(400).json({ error: "You can provide at most 12 seed songs." });
+    // 5–12 שירים
+    if (seedsRaw.length < 5 || seedsRaw.length > 12) {
+      return res.status(400).json({ error: "יש להזין בין 5 ל-12 שירים (בפורמט: Title - Artist)." });
+    }
 
-    const hebrewCount = songs.filter(isHebrewText).length;
-    const preferHebrew = hebrewCount >= Math.ceil(songs.length / 2);
+    // חילוץ אמנים ודרישה ל-5 אמנים שונים לפחות
+    const seedPairs = seedsRaw.map(parseLineToPair).filter(Boolean);
+    const artistSet = new Set(seedPairs.map(p => p.artist).filter(Boolean).map(a => a.toLowerCase().trim()));
+    if (artistSet.size < 5) {
+      return res.status(400).json({
+        error: "יש צורך בלפחות 5 זמרים/אמנים שונים ברשימת השירים שהזנת. הוסף אמנים נוספים ונסה שוב."
+      });
+    }
 
-    // target playlist size
-    const targetTotal = songs.length >= 8
-      ? Math.floor(Math.random() * (50 - 30 + 1)) + 30
-      : Math.floor(Math.random() * (40 - 20 + 1)) + 20;
+    // יעד אורך רנדומלי בהתאם לכמות הסידס
+    const targetTotal = seedsRaw.length <= 7 ? randInt(25, 40) : randInt(35, 50);
 
-    const userPrompt = `
-User provided these seed songs (Title - Artist):
-${songs.join(" | ")}
+    const allowedArtistsList = Array.from(artistSet).join(", ");
 
-RULES:
-1. Always include the seed songs.
-2. Target total songs: ${targetTotal}.
-3. Use only the same artists as seeds.
-4. Return only real songs by these artists.
-5. Strict format: Title - Artist (one per line, no numbering, no extra text).
-6. No duplicates.
-7. If seeds are mostly Hebrew: only Hebrew songs by Israeli artists.
-   If seeds are mostly English: only international English-language songs.
-    `;
+    const system = `You are a strict playlist generator.
+- Output ONLY newline-separated lines in the exact format: Title - Artist
+- Use ONLY these artists (no new artists allowed): ${allowedArtistsList}
+- Include the seed songs too.
+- No commentary, no numbering, no explanations.
+- No duplicates.`;
+
+    const user = `Seed songs (exact format "Title - Artist"):
+${seedsRaw.join("\n")}
+
+Rules:
+- Total target lines: ${targetTotal}
+- Use ONLY the same artists that appear in the seeds.
+- Prefer a nice mix across these artists.
+- Return ONLY the lines, no extra text.`;
 
     const response = await client.messages.create({
-      model: "claude-3", // עדכני
+      model: MODEL,
       max_tokens: 1500,
-      system: "You are a playlist generator. Follow the rules strictly.",
-      messages: [{ role: "user", content: userPrompt }],
+      system,
+      messages: [{ role: "user", content: user }],
     });
 
-    // response.content יכול להיות array של block objects
-    const output = response.content
-      .map(block => block.text)
-      .join("\n")
-      .trim();
+    const blocks = Array.isArray(response?.content) ? response.content : [];
+    const rawText = blocks.map(b => b?.text || "").join("\n").trim();
 
-    res.status(200).json({ playlist: output, requestedSongs: songs.length, targetTotal });
+    // פוסט־פרוסס קפדני: מכניסים קודם את הסידס, אחר כך רק שירים של אותם אמנים, בלי כפילויות
+    const seen = new Set();
+    const out = [];
+
+    // 1) סידס - תמיד בפנים וללא כפילויות
+    for (const raw of seedsRaw) {
+      const p = parseLineToPair(raw);
+      if (!p) continue;
+      const key = canonicalKey(p.title, p.artist);
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(`${p.title} - ${p.artist}`);
+      }
+    }
+
+    // 2) הצעות המודל - רק אמנים מורשים, עד כמות היעד
+    const suggestions = splitLines(rawText);
+    for (const line of suggestions) {
+      if (out.length >= 80) break; // הגבלת בטיחות
+      const p = parseLineToPair(line);
+      if (!p || !p.artist) continue;
+      if (!artistSet.has(p.artist.toLowerCase().trim())) continue; // רק אמנים מהסידס
+      const key = canonicalKey(p.title, p.artist);
+      if (seen.has(key)) continue;
+      out.push(`${p.title} - ${p.artist}`);
+      seen.add(key);
+      if (out.length >= targetTotal) break;
+    }
+
+    let warning = null;
+    if (out.length < targetTotal) {
+      warning = `הופקו ${out.length} שירים בלבד (היעד היה ${targetTotal}).`;
+    }
+
+    return res.status(200).json({
+      playlistText: out.join("\n"), // <<< שם אחיד שהקליינט מצפה לו
+      count: out.length,
+      targetTotal,
+      success: out.length >= 5,
+      warning,
+    });
   } catch (error) {
     console.error("playlist-claude error:", error);
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error?.message || String(error) });
   }
 }
