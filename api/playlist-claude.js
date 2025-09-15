@@ -11,38 +11,37 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { seeds } = req.body;
+    const { songs } = req.body;
 
-    if (!seeds || !Array.isArray(seeds)) {
+    if (!songs || !Array.isArray(songs)) {
       return res.status(400).json({ error: "You must provide an array of songs." });
     }
 
-    // --- Validation rules ---
-    if (seeds.length < 5) {
+    if (songs.length < 5) {
       return res.status(400).json({ error: "Please provide at least 5 seed songs." });
     }
-    if (seeds.length > 12) {
+    if (songs.length > 12) {
       return res.status(400).json({ error: "You can provide at most 12 seed songs." });
     }
 
-    // כל שיר חייב להיות מאמן אחר
-    const artists = seeds.map((s) => s.split("-").slice(1).join("-").trim().toLowerCase());
-    if (new Set(artists).size < seeds.length) {
+    // כל שיר חייב להיות מזמר אחר
+    const artists = songs.map((s) => s.split("-").slice(1).join("-").trim().toLowerCase());
+    if (new Set(artists).size < songs.length) {
       return res.status(400).json({ error: "All seed songs must be from different artists." });
     }
 
-    // --- Target playlist length rules ---
+    // --- Target playlist length ---
     let targetTotal;
-    if (seeds.length >= 8) {
+    if (songs.length >= 8) {
       targetTotal = Math.floor(Math.random() * (50 - 30 + 1)) + 30; // 30–50
     } else {
       targetTotal = Math.floor(Math.random() * (40 - 20 + 1)) + 20; // 20–40
     }
 
-    // --- Build user prompt ---
+    // --- Build prompt ---
     const userPrompt = `
-The user provided these seed songs (Title - Artist):
-${seeds.join(" | ")}
+User provided these seed songs (Title - Artist):
+${songs.join(" | ")}
 
 RULES:
 1. Use EXACTLY the same artists as in the seed list. Do not add new artists.
@@ -69,7 +68,7 @@ RULES:
 
     res.status(200).json({
       playlist: output,
-      requestedSongs: seeds.length,
+      requestedSongs: songs.length,
       targetTotal,
     });
   } catch (error) {
