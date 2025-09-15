@@ -12,19 +12,19 @@ const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || localStorage.get
 // Chef Claude API (serverless route)
 // -----------------------------------
 
-export async function getPlaylistFromChefClaude(songsArr) {
-  console.log('client: getPlaylistFromChefClaude -> sending', songsArr);
+export async function getPlaylistFromChefClaude(songsArr, desiredArtistsCount, desiredTotal) {
+  console.log('client: getPlaylistFromChefClaude -> sending', songsArr, desiredArtistsCount, desiredTotal);
   const res = await fetch('/api/playlist-claude', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ songs: songsArr })
+    body: JSON.stringify({ songs: songsArr, desiredArtistsCount, desiredTotal })
   });
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(`Server error ${res.status}: ${txt}`);
   }
   const data = await res.json();
-  return data.playlistText || "";
+  return data;
 }
 
 export async function getRecipeFromChefClaude(ingredientsArr) {

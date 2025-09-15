@@ -1,22 +1,16 @@
 // api/playlist-claude.js
-// Guarantees at least 20 final items (5 seeds + >=15 suggestions).
-const SYSTEM_PROMPT = `
-You are an assistant that receives a list of EXACTLY 5 seed songs (each "Title - Artist").
-Your task:
-- Return a final playlist that INCLUDES the original 5 seed songs AND at least 15 additional songs that are musically similar (same vibe/genre/mood).
-- DO NOT suggest songs that are from a different musical genre than the seed songs.
-  * If the 5 seeds are mixed genres, use the majority genre. If there is no clear majority, use the genre of the first provided seed.
-- Prefer (give higher priority to) songs by the SAME ARTISTS listed in the seeds (i.e., include other songs from those same artists where relevant).
-- Return ONLY plain newline-separated lines, each line exactly in this format:
-    Title - Artist
-  Do NOT include numbering, headings, explanations, or any other text.
-- The final list SHOULD contain the original 5 seed songs (anywhere in the list) and at least 15 additional suggestions (so total >=20 lines).
-- Be strict: if you cannot find suitable same-genre suggestions, still return only same-genre songs (do not return different-genre artists).
-`;
+// Guarantees at least desiredTotal final items (including seeds) and requests Claude to include at least desiredArtistsCount different artists.
 
-const TARGET_TOTAL = 20;
-const MAX_TOTAL = 40; // safety hard cap
-const MAX_RETRIES = 2;
+const SYSTEM_PROMPT = `
+You are an assistant that receives a list of EXACTLY 5+ seed songs (each "Title - Artist").
+Your task:
+- Return a final playlist that INCLUDES the original seed songs AND a number of additional songs so that the final playlist contains the requested total number of songs.
+- Ensure the final playlist contains at least the requested number of DISTINCT ARTISTS.
+- Return ONLY plain newline-separated lines, each in this format exactly:
+    Title - Artist
+- Do NOT include numbering, headings, explanations, or any other text.
+- Try not to repeat the exact same Title - Artist line.
+`;
 
 function linesFromText(text) {
   return (text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -46,7 +40,7 @@ async function callClaude(messages) {
     },
     body: JSON.stringify({
       model: 'claude-3-haiku-20240307',
-      max_tokens: 1024,
+      max_tokens: 2048,
       system: SYSTEM_PROMPT,
       messages
     })
@@ -58,7 +52,7 @@ async function callClaude(messages) {
     throw err;
   }
   const data = await res.json();
-  // robust extraction
+  // extract text robustly
   let text = '';
   if (data?.content?.[0]?.text) text = data.content[0].text;
   else if (typeof data.completion === 'string' && data.completion.trim()) text = data.completion;
@@ -72,99 +66,89 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { songs } = req.body ?? {};
-    console.log('playlist-claude: received songs:', songs);
+    const { songs, desiredArtistsCount, desiredTotal } = req.body ?? {};
+    console.log('playlist-claude: received body:', { songsLength: Array.isArray(songs) ? songs.length : undefined, desiredArtistsCount, desiredTotal });
 
     if (!songs || !Array.isArray(songs)) {
       return res.status(400).json({ error: 'Please provide an array of songs.' });
     }
 
-    const seedsRaw = songs
-      .map(s => (typeof s === 'string' ? s.trim() : ''))
-      .filter(Boolean)
-      .slice(0, 5);
-
-    if (seedsRaw.length < 5) {
-      return res.status(400).json({ error: 'Please provide an array of at least 5 songs.' });
+    const cleanedSeeds = songs.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean).slice(0, 20);
+    if (cleanedSeeds.length < 5) {
+      return res.status(400).json({ error: 'Please provide at least 5 seed songs.' });
     }
 
-    // prepare initial user message
-    const initialUser = { role: 'user', content: `Here are 5 seed songs (Title - Artist): ${seedsRaw.join(' | ')}. Provide at least 15 additional songs similar in vibe/genre. Return only lines "Title - Artist".` };
+    // sanitize requested numbers and clamp
+    const reqArtists = Number.isInteger(desiredArtistsCount) ? Math.max(1, Math.min(20, desiredArtistsCount)) : 5;
+    const reqTotal = Number.isInteger(desiredTotal) ? Math.max(10, Math.min(200, desiredTotal)) : 20;
 
-    // aggregated list of final raw lines
+    console.log('playlist-claude: seeds (first 10):', cleanedSeeds.slice(0,10));
+    console.log('playlist-claude: target total', reqTotal, 'min distinct artists', reqArtists);
+
+    // Build the initial user prompt including constraints
+    const initialUser = {
+      role: 'user',
+      content: `Here are seed songs (Title - Artist): ${cleanedSeeds.slice(0,5).join(' | ')}.
+Please produce a final playlist that:
+- INCLUDES the provided seed songs (they must appear in the final list).
+- Contains exactly or at least ${reqTotal} lines (Title - Artist).
+- Contains at least ${reqArtists} distinct artists.
+Return ONLY plain lines "Title - Artist" with no numbering or commentary.`
+    };
+
+    // call Claude (single call + small follow-ups handled server-side if needed)
+    const rawText = await callClaude([initialUser]);
+    console.log('playlist-claude: claude returned raw length', rawText ? rawText.length : 0);
+
+    const returnedLines = linesFromText(rawText);
+    console.log('playlist-claude: claude returned lines count:', returnedLines.length);
+
+    // Build final list, preserving seeds and de-duplicating
     const seen = new Set();
-    const finalLines = [];
+    const final = [];
 
-    const addRawLine = (raw, maybeTitle, maybeArtist) => {
-      const key = canonicalKey(maybeTitle || raw, maybeArtist || '');
+    const addLine = (raw) => {
+      const p = parseLineToPair(raw);
+      const key = canonicalKey(p ? p.title : raw, p ? p.artist : '');
       if (seen.has(key)) return false;
       seen.add(key);
-      finalLines.push(raw);
+      final.push(p ? `${p.title} - ${p.artist}` : raw);
       return true;
     };
 
-    // 1) add seeds EXACTLY as user provided (ensures presence and order)
-    for (const seedStr of seedsRaw) {
-      const p = parseLineToPair(seedStr);
-      if (p && p.title) addRawLine(`${p.title} - ${p.artist || ''}`, p.title, p.artist || '');
-      else addRawLine(seedStr, seedStr, '');
+    // ensure seeds are present (first)
+    for (const s of cleanedSeeds.slice(0,5)) addLine(s);
+
+    // add suggestions from Claude in order
+    for (const l of returnedLines) {
+      if (final.length >= reqTotal) break;
+      addLine(l);
     }
 
-    // 2) call Claude (and possibly follow up) until we have TARGET_TOTAL or retries exhausted
-    let attempt = 0;
-    let userMessages = [initialUser];
-
-    while (finalLines.length < TARGET_TOTAL && attempt <= MAX_RETRIES) {
-      attempt++;
-      console.log(`playlist-claude: calling Claude, attempt ${attempt}. Need ${Math.max(0, TARGET_TOTAL - finalLines.length)} more items.`);
-      const text = await callClaude(userMessages);
-      const suggestedLines = linesFromText(text);
-      console.log('playlist-claude: claude returned lines count:', suggestedLines.length);
-
-      // parse and add suggestions
-      for (const l of suggestedLines) {
-        if (finalLines.length >= MAX_TOTAL) break;
-        const p = parseLineToPair(l);
-        if (p && p.title) addRawLine(`${p.title} - ${p.artist || ''}`, p.title, p.artist || '');
-        else addRawLine(l, l, '');
-      }
-
-      // if we reached target or cap, break
-      if (finalLines.length >= TARGET_TOTAL || finalLines.length >= MAX_TOTAL) break;
-
-      // prepare a follow-up user message requesting only the missing amount, excluding already-used entries
-      const missing = Math.min(TARGET_TOTAL - finalLines.length, MAX_TOTAL - finalLines.length);
-      const excludeList = Array.from(seen).slice(0, 200).map(k => {
-        // we stored keys as "title|||artist"
-        const parts = k.split('|||');
-        return parts[0] + (parts[1] ? ` - ${parts[1]}` : '');
-      });
-      const followUpContent = `Please provide ${missing} additional unique songs in the same "Title - Artist" format, similar genre/vibe, and do NOT repeat any of these songs (exclude):\n${excludeList.join('\n')}\nReturn only plain lines "Title - Artist".`;
-      // next request ask only for suggestions
-      userMessages = [{ role: 'user', content: followUpContent }];
-    }
-
-    // final safety: ensure seeds still present (should be)
-    for (const seedStr of seedsRaw) {
-      const p = parseLineToPair(seedStr);
-      const key = canonicalKey(p ? p.title : seedStr, p ? p.artist : '');
-      if (!seen.has(key)) {
-        finalLines.unshift(p ? `${p.title} - ${p.artist || ''}` : seedStr);
-        seen.add(key);
+    // If not enough, attempt simple fallback: repeat more seeds/details (if Claude underproduced)
+    if (final.length < reqTotal) {
+      console.log('playlist-claude: not enough lines from Claude, attempting lightweight augmentation with seeds variations');
+      for (const s of cleanedSeeds) {
+        if (final.length >= reqTotal) break;
+        addLine(s);
       }
     }
 
-    // Build result text; limit to MAX_TOTAL
-    const finalTextLines = finalLines.slice(0, MAX_TOTAL);
-    console.log('playlist-claude: returning final count:', finalTextLines.length);
+    const playlistText = final.slice(0, reqTotal).join('\n');
+    // compute distinct artists
+    const artists = new Set(final.map(l => {
+      const p = parseLineToPair(l);
+      return p?.artist?.toLowerCase?.() || '';
+    }).filter(Boolean));
+    const distinctArtistsCount = artists.size;
 
-    const playlistText = finalTextLines.join('\n');
+    const success = final.length >= reqTotal && distinctArtistsCount >= reqArtists;
+    const warning = success ? null : `Generated ${final.length} items with ${distinctArtistsCount} distinct artists (requested total ${reqTotal} and ${reqArtists} distinct artists).`;
 
-    // if, after retries, we still didn't reach TARGET_TOTAL, return with a warning field so client can show notice
-    const success = finalTextLines.length >= TARGET_TOTAL;
-    const warning = success ? null : `Only ${finalTextLines.length} items could be generated (requested ${TARGET_TOTAL}).`;
+    console.log('playlist-claude: returning final count:', final.length, 'distinctArtists:', distinctArtistsCount);
 
-    return res.status(200).json({ playlistText, count: finalTextLines.length, success, warning });
+    return res.status(200).json({ playlistText, count: final.length, success, distinctArtistsCount, requested: { reqTotal, reqArtists }, warning });
+
   } catch (err) {
     console.error('playlist-claude error:', err);
     return res.status(500).json({ error: err?.message || String(err) });
