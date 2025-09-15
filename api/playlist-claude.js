@@ -1,29 +1,18 @@
 // api/playlist-claude.js
-// Robust server-side playlist generator using Anthropic Claude.
-// Tries content-blocks "system" payload first, falls back to legacy format on specific 400 errors.
+// Robust playlist generator: enforces Title - Artist lines, prefers seed language, no commentary lines.
 
 const SYSTEM_PROMPT = `
 You are an assistant that receives:
-- a list of seed songs (each line in the exact format: Title - Artist), and
-- two integers: REQUESTED_TOTAL (number of lines the final playlist should contain) and REQUESTED_DISTINCT_ARTISTS (minimum count of distinct artists required).
+- a list of seed songs (each line in the exact format: Title - Artist),
+- integers REQUESTED_TOTAL and REQUESTED_DISTINCT_ARTISTS.
 
-Your job:
-- Produce a final playlist as plain text with EXACTLY REQUESTED_TOTAL lines if possible. Each line MUST be exactly in this format:
-    Title - Artist
-  (ASCII hyphen '-' with one space on each side; no numbering, no bullets, no headings.)
-- The final playlist MUST INCLUDE the original seed songs (the seeds provided) somewhere in the list (they can appear in any order).
-- The final playlist SHOULD have at least REQUESTED_DISTINCT_ARTISTS distinct artists (case-insensitive). Try to maximize distinct artists to reach that target.
-- Maintain genre/vibe consistency: prefer songs in the same musical genre/vibe as the seed songs. If seeds contain mixed genres, use the majority genre; if there is no clear majority, use the genre of the first seed.
-- Prefer (but do not be forced to repeat) other songs by the same artists appearing in the seeds — include those if they fit the genre/vibe and help reach the totals.
-- Do NOT repeat the same Title - Artist line more than once. Avoid near-duplicates (e.g., the same song with minor alternate punctuation).
-- If a requested constraint cannot be fully met (for example Claude cannot find enough same-genre distinct artists), return the best possible list you can while still following the formatting rules — do not add explanations or any additional non "Title - Artist" lines.
-- Do not include release years, labels, links, commentary, numbering, blank lines, or any JSON or metadata — only plain lines "Title - Artist".
-- Format featuring artists naturally, e.g.: Blinding Lights - The Weeknd ft. Artist Name
-- Keep output concise and machine-parsable: exact ASCII hyphen as separator, one song per line, no extra characters around the lines.
+Return ONLY newline-separated lines exactly in this format:
+Title - Artist
 
-Edge behavior (fallback):
-- Aim to output exactly REQUESTED_TOTAL lines. If impossible while obeying the rules, output as many valid lines as you can (still one "Title - Artist" per line).
-- When asked to include N distinct artists but the seeds give fewer artists, prioritize adding songs by new artists of the same vibe until reaching N, then fill remaining lines with best matches (still avoiding duplicate Title - Artist pairs).
+Do NOT include any headings, numbering, explanations, summaries, or meta text.
+Do NOT include any line that is not "Title - Artist".
+Prefer songs that match the seeds' language (Hebrew vs other) and prefer same-genre/vibe.
+Include the original seeds somewhere in the final list. Do not repeat identical Title - Artist pairs.
 `;
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -46,20 +35,24 @@ function parseLineToPair(line) {
 }
 
 function canonicalKey(titleOrRaw, artist = '') {
-  return `${(titleOrRaw||'').toString().trim()}|||${(artist||'').toString().trim()}`.toLowerCase().replace(/\s+/g, ' ').trim();
+  return `${(titleOrRaw||'').toString().trim()}|||${(artist||'').toString().trim()}`
+    .toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+function isHebrewText(s) {
+  try {
+    return /[\u0590-\u05FF]/.test(s);
+  } catch (e) { return false; }
+}
+
+// --- Claude callers (blocks first, fallback legacy) ---
 async function callClaudeBlocks(apiKey, systemPrompt, userPrompt, maxTokens = 2048) {
-  // system as array of content blocks, messages with content blocks
   const payload = {
     model: MODEL,
     max_tokens: maxTokens,
     system: [{ type: 'text', text: systemPrompt }],
-    messages: [
-      { role: 'user', content: [{ type: 'text', text: userPrompt }] }
-    ]
+    messages: [{ role: 'user', content: [{ type: 'text', text: userPrompt }] }]
   };
-
   const r = await fetch(ANTHROPIC_URL, {
     method: 'POST',
     headers: {
@@ -69,13 +62,11 @@ async function callClaudeBlocks(apiKey, systemPrompt, userPrompt, maxTokens = 20
     },
     body: JSON.stringify(payload)
   });
-
-  const text = await r.text();
+  const txt = await r.text();
   let data;
-  try { data = JSON.parse(text); } catch (e) { data = text; }
-
+  try { data = JSON.parse(txt); } catch(e) { data = txt; }
   if (!r.ok) {
-    const err = new Error(`Claude error ${r.status}: ${text}`);
+    const err = new Error(`Claude error ${r.status}: ${txt}`);
     err.status = r.status;
     err.body = data;
     throw err;
@@ -84,13 +75,7 @@ async function callClaudeBlocks(apiKey, systemPrompt, userPrompt, maxTokens = 20
 }
 
 async function callClaudeLegacy(apiKey, systemPrompt, userPrompt, maxTokens = 2048) {
-  // older shape: system as string, messages with user content string
-  const payload = {
-    model: MODEL,
-    max_tokens: maxTokens,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }]
-  };
+  const payload = { model: MODEL, max_tokens: maxTokens, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] };
   const r = await fetch(ANTHROPIC_URL, {
     method: 'POST',
     headers: {
@@ -100,11 +85,11 @@ async function callClaudeLegacy(apiKey, systemPrompt, userPrompt, maxTokens = 20
     },
     body: JSON.stringify(payload)
   });
-  const text = await r.text();
+  const txt = await r.text();
   let data;
-  try { data = JSON.parse(text); } catch (e) { data = text; }
+  try { data = JSON.parse(txt); } catch(e) { data = txt; }
   if (!r.ok) {
-    const err = new Error(`Claude legacy error ${r.status}: ${text}`);
+    const err = new Error(`Claude legacy error ${r.status}: ${txt}`);
     err.status = r.status;
     err.body = data;
     throw err;
@@ -115,12 +100,10 @@ async function callClaudeLegacy(apiKey, systemPrompt, userPrompt, maxTokens = 20
 function extractTextFromClaudeResponse(data) {
   if (!data) return '';
   if (typeof data === 'string') return data;
-  // prefer .content[0].text
   if (data?.content?.[0]?.text) return data.content[0].text;
   if (typeof data.completion === 'string' && data.completion.trim()) return data.completion;
   if (Array.isArray(data.completion?.parts)) return data.completion.parts.join('');
   if (Array.isArray(data.messages) && data.messages.length) return data.messages.map(m => m.text || m.content || '').join('\n');
-  // last resort
   return JSON.stringify(data);
 }
 
@@ -131,9 +114,7 @@ export default async function handler(req, res) {
     const { songs, desiredArtistsCount = 6, desiredTotal = 25 } = req.body ?? {};
     console.log('playlist-claude: request', { songsLength: Array.isArray(songs) ? songs.length : undefined, desiredArtistsCount, desiredTotal });
 
-    if (!Array.isArray(songs) || songs.length === 0) {
-      return res.status(400).json({ error: 'Please provide songs array.' });
-    }
+    if (!Array.isArray(songs) || songs.length === 0) return res.status(400).json({ error: 'Please provide songs array.' });
 
     const seeds = songs.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean).slice(0, 50);
     if (seeds.length < 5) return res.status(400).json({ error: 'Please provide at least 5 seed songs.' });
@@ -141,61 +122,59 @@ export default async function handler(req, res) {
     const targetArtists = Math.max(1, Math.min(100, Number(desiredArtistsCount)));
     const targetTotal = Math.max(5, Math.min(MAX_TOTAL, Number(desiredTotal)));
 
-    // dedupe/canonical helper
+    // language preference (majority of seeds)
+    const hebrewCount = seeds.reduce((c, s) => c + (isHebrewText(s) ? 1 : 0), 0);
+    const preferHebrew = hebrewCount >= Math.ceil(seeds.length / 2);
+    console.log('playlist-claude: preferHebrew?', preferHebrew, 'hebrewCount', hebrewCount, 'seeds', seeds.length);
+
+    // dedupe and final array
     const seen = new Set();
     const final = [];
 
-    const addLine = (raw) => {
+    const addParsedLine = (raw) => {
       const p = parseLineToPair(raw);
-      const key = canonicalKey(p ? p.title : raw, p ? p.artist : '');
+      if (!p || !p.title) return false; // reject unparseable lines (important!)
+      const key = canonicalKey(p.title, p.artist || '');
       if (seen.has(key)) return false;
       seen.add(key);
-      final.push(p ? `${p.title} - ${p.artist}` : raw);
+      final.push(`${p.title} - ${p.artist}`);
       return true;
     };
 
-    // always include the first 5 seed songs to ensure presence
-    for (let i = 0; i < Math.min(5, seeds.length); i++) addLine(seeds[i]);
-
-    const currentArtistsSet = () => {
-      const s = new Set();
-      for (const l of final) {
-        const p = parseLineToPair(l);
-        if (p?.artist) s.add(p.artist.toLowerCase());
+    // add seeds (only if parseable)
+    for (let i = 0; i < Math.min(5, seeds.length); i++) {
+      const ok = addParsedLine(seeds[i]);
+      if (!ok) {
+        console.warn('playlist-claude: seed not parseable, skipping seed:', seeds[i]);
       }
-      return s;
-    };
+    }
 
-    // prepare initial user message (we will supply numbers in prompt text)
+    // prepare initial prompt (explicit, strict)
     const seedFive = seeds.slice(0,5).join(' | ');
-    let userPrompt = `Here are seed songs (Title - Artist): ${seedFive}.
+    let userPrompt = `Here are 5 seed songs (Title - Artist): ${seedFive}.
 REQUESTED_TOTAL = ${targetTotal}
 REQUESTED_DISTINCT_ARTISTS = ${targetArtists}
-Please output the playlist as newline-separated lines exactly in the format "Title - Artist". Include the original seeds somewhere in the list. Prefer songs in the same vibe/genre as the seeds. No extra text.`;
+Return ONLY newline-separated lines exactly in the form "Title - Artist".
+Do NOT include any other text. Prefer songs in the same language as the seeds (Hebrew) if seeds are predominantly Hebrew: ${preferHebrew ? 'yes' : 'no'}. Focus on same-genre/vibe suggestions.`;
 
     let attempt = 0;
     let lastResponseData = null;
 
-    while ((final.length < targetTotal || currentArtistsSet().size < targetArtists) && attempt <= MAX_RETRIES) {
+    while ((final.length < targetTotal || new Set(final.map(l => (parseLineToPair(l)?.artist || '').toLowerCase()).filter(Boolean)).size < targetArtists) && attempt <= MAX_RETRIES) {
       attempt++;
-      console.log(`playlist-claude: calling Claude attempt ${attempt}. have ${final.length} lines, ${currentArtistsSet().size} artists; need total ${targetTotal}, artists ${targetArtists}`);
+      console.log(`playlist-claude: attempt ${attempt} - have ${final.length} lines; need total ${targetTotal}`);
 
       let data;
       try {
-        // try blocks format first
         data = await callClaudeBlocks(process.env.ANTHROPIC_API_KEY, SYSTEM_PROMPT, userPrompt);
       } catch (err) {
         console.warn('playlist-claude: blocks call failed:', err?.message || err);
-        // check for known error message that indicates blocks/system array required vs invalid
-        const msg = String(err?.message || err?.body || '');
-        // if server explicitly complains about "system: Input should be a valid list" or invalid_request_error -> fallback
+        const msg = String(err?.message || JSON.stringify(err?.body || ''));
         if (err?.status === 400 && (msg.includes('valid list') || msg.includes('invalid_request_error') || msg.includes('system: Input'))) {
-          console.log('playlist-claude: falling back to legacy payload due to 400 invalid_request_error about system/input format');
-          // try legacy
+          console.log('playlist-claude: fallback to legacy payload due to specific 400.');
           data = await callClaudeLegacy(process.env.ANTHROPIC_API_KEY, SYSTEM_PROMPT, userPrompt);
         } else {
-          // other error -> rethrow so outer catch returns 500
-          throw err;
+          throw err; // other error -> bubble up
         }
       }
 
@@ -205,66 +184,64 @@ Please output the playlist as newline-separated lines exactly in the format "Tit
       const lines = linesFromText(rawText);
       console.log('playlist-claude: parsed lines count', lines.length);
 
+      // Parse lines to pairs, then optionally prefer language
+      const parsedLines = [];
       for (const l of lines) {
-        if (final.length >= targetTotal) break;
-        addLine(l);
+        const p = parseLineToPair(l);
+        if (p && p.title) parsedLines.push({ raw: `${p.title} - ${p.artist}`, title: p.title, artist: p.artist, hebrew: isHebrewText(l) });
       }
 
-      // recompute needs
-      const artistsNow = currentArtistsSet();
-      const missingArtists = Math.max(0, targetArtists - artistsNow.size);
+      // prefer lines that match desired language
+      const preferred = parsedLines.filter(pl => pl.hebrew === preferHebrew);
+      const nonPreferred = parsedLines.filter(pl => pl.hebrew !== preferHebrew);
+
+      // add preferred first
+      for (const pl of preferred) {
+        if (final.length >= targetTotal) break;
+        addParsedLine(pl.raw);
+      }
+      // then non-preferred if still needed
+      for (const pl of nonPreferred) {
+        if (final.length >= targetTotal) break;
+        addParsedLine(pl.raw);
+      }
+
+      // prepare follow-up if still missing
+      const distinctArtistsNow = new Set(final.map(l => (parseLineToPair(l)?.artist || '').toLowerCase()).filter(Boolean)).size;
+      const missingArtists = Math.max(0, targetArtists - distinctArtistsNow);
       const missingTotal = Math.max(0, targetTotal - final.length);
 
       if (missingArtists > 0 || missingTotal > 0) {
-        // prepare follow-up excluding used titles/artists to ask for more unique ones
         const excludeTitles = Array.from(seen).slice(0,200).map(k => k.split('|||')[0]).filter(Boolean);
-        const excludeArtists = Array.from(artistsNow).slice(0,200);
+        const excludeArtists = Array.from(new Set(final.map(l => (parseLineToPair(l)?.artist || '').toLowerCase()))).slice(0,200);
 
-        const followUp = `I still need ${missingTotal} more songs to reach ${targetTotal} total, and at least ${missingArtists} additional DISTINCT ARTISTS.
+        const followUp = `I still need ${missingTotal} more songs to reach ${targetTotal}, and at least ${missingArtists} additional DISTINCT ARTISTS.
 Return ONLY lines "Title - Artist". Do NOT repeat any of these titles or artists (exclude):
 Artists to exclude:
 ${excludeArtists.join('\n')}
 Titles to exclude:
 ${excludeTitles.join('\n')}
-Focus on songs in the same vibe/genre as the seeds.`;
+Prefer songs in the same language as seeds: ${preferHebrew ? 'Hebrew' : 'same-language-if-any'}.`;
 
         userPrompt = followUp;
-        // loop will try again
+        // loop and call again if necessary
       } else {
-        // got enough
-        break;
+        break; // got enough
       }
     }
 
-    // ensure seeds are present (safety)
-    for (const seed of seeds.slice(0,5)) {
-      const p = parseLineToPair(seed);
-      const key = canonicalKey(p ? p.title : seed, p ? p.artist : '');
-      if (!seen.has(key)) {
-        final.unshift(p ? `${p.title} - ${p.artist}` : seed);
-        seen.add(key);
-      }
-    }
-
-    // pad with seeds if still short (worst-case, but avoids returning empty)
-    if (final.length < targetTotal) {
-      for (const s of seeds) {
-        if (final.length >= targetTotal) break;
-        addLine(s);
-      }
-    }
-
+    // final safety: ensure at least seeds are present; if not parseable seeds were skipped, we keep going
     const finalLines = final.slice(0, targetTotal);
+
     const distinctArtistsCount = new Set(finalLines.map(l => (parseLineToPair(l)?.artist || '').toLowerCase()).filter(Boolean)).size;
     const success = finalLines.length >= targetTotal && distinctArtistsCount >= targetArtists;
     const warning = success ? null : `Generated ${finalLines.length} items with ${distinctArtistsCount} distinct artists (requested ${targetTotal} and ${targetArtists}).`;
 
     console.log('playlist-claude: finished', { count: finalLines.length, distinctArtistsCount, success });
 
-    return res.status(200).json({ playlistText: finalLines.join('\n'), count: finalLines.length, distinctArtistsCount, success, warning, lastResponseData });
+    return res.status(200).json({ playlistText: finalLines.join('\n'), count: finalLines.length, distinctArtistsCount, success, warning, lastResponseData: typeof lastResponseData === 'object' ? (lastResponseData?.content ? undefined : lastResponseData) : undefined });
   } catch (err) {
     console.error('playlist-claude error:', err);
-    // try to return any structured message if available
     const body = err?.body || err?.message || String(err);
     return res.status(500).json({ error: body });
   }

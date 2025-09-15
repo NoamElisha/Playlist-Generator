@@ -89,9 +89,6 @@ export default function Body() {
         >
           Generate Playlist
         </button>
-        <div style={{alignSelf:'center', color:'#6b7280'}}>
-          {lastParams ? `Requested ${lastParams.desiredArtistsCount} artists, ${lastParams.desiredTotal} total` : null}
-        </div>
       </div>
 
       {loading && <p>Loading…</p>}
