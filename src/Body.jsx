@@ -1,238 +1,213 @@
-// /src/Body.jsx
+// src/Body.jsx
 import React from "react";
-import SongsList from "./components/SongsList";
-import ClaudePlaylist from "./components/ClaudePlaylist";
+import TypeaheadInput from "./components/TypeaheadInput";
 import AddToSpotifyButton from "./components/AddToSpotifyButton";
 import { getPlaylistFromChefClaude } from "./ai";
-import TypeaheadInput from "./components/TypeaheadInput";
-
+import { parsePlaylistTextToTracks } from "./utils/parsePlaylistText";
 
 function parseArtist(line) {
-  const parts = (line || "")
-    .split(/[-–—]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const parts = (line || "").split(/[-–—]/).map(s => s.trim()).filter(Boolean);
   return parts.length >= 2 ? parts.slice(1).join("-").trim() : "";
 }
 function isValidPlaylistName(name) {
   if (!name) return false;
-  const trimmed = name.trim();
-  if (trimmed.length === 0) return false;
-  if (trimmed.length > 100) return false;
-  if (/[\x00-\x1F\x7F]/.test(trimmed)) return false;
-  return true;
+  const s = name.trim();
+  return s.length > 0 && s.length <= 100 && !/[\x00-\x1F\x7F]/.test(s);
 }
 
 export default function Body() {
+  const [view, setView] = React.useState("select"); // "select" | "result"
   const [songs, setSongs] = React.useState([]);
   const [playlistText, setPlaylistText] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
-  const [playlistName, setPlaylistName] = React.useState("AI Playlist");
+  const [playlistName, setPlaylistName] = React.useState("My Awesome Playlist");
+
+  const uniqArtists = React.useMemo(() => {
+    const s = new Set(
+      songs.map(parseArtist).filter(Boolean).map(a => a.toLowerCase()),
+    );
+    return Array.from(s);
+  }, [songs]);
+
+  const artistsDisplay = React.useMemo(() => {
+    // שמות מקוריים (לא lowercase)
+    const seen = new Set();
+    const out = [];
+    for (const line of songs) {
+      const a = parseArtist(line);
+      const k = a.toLowerCase();
+      if (a && !seen.has(k)) { seen.add(k); out.push(a); }
+    }
+    return out;
+  }, [songs]);
+
+  const artistsProgress = Math.min(uniqArtists.length, 5) / 5 * 100;
 
   async function getPlaylist() {
     try {
       setError("");
-
-      // בדיקת 5–12
-      if (songs.length < 5) {
-        setError("נא להזין לפחות 5 שירים.");
-        return;
+      if (songs.length < 5) return setError("נא להזין לפחות 5 שירים.");
+      if (songs.length > 12) return setError("ניתן להזין עד 12 שירים.");
+      if (uniqArtists.length < 5) {
+        return setError("יש צורך בלפחות 5 זמרים/אמנים שונים.");
       }
-      if (songs.length > 12) {
-        setError("ניתן להזין עד 12 שירים.");
-        return;
-      }
-
-      // לפחות 5 אמנים שונים
-      const uniqArtists = new Set(
-        songs
-          .map(parseArtist)
-          .filter(Boolean)
-          .map((a) => a.toLowerCase())
-      );
-      if (uniqArtists.size < 5) {
-        setError(
-          "יש צורך בלפחות 5 זמרים/אמנים שונים ברשימה. הוסף אמנים נוספים ונסה שוב."
-        );
-        return;
-      }
-
       setLoading(true);
       const data = await getPlaylistFromChefClaude(songs);
       setPlaylistText(data.playlistText || "");
-
-      // ❌ לא מציגים שום warning אם חזר פחות מהיעד
-      // if (data.warning) setError(data.warning);
-    } catch (err) {
-      console.error("getPlaylist error:", err);
-      setError(err.message || String(err));
+      setView("result");
+    } catch (e) {
+      setError(e.message || String(e));
     } finally {
       setLoading(false);
     }
   }
 
-  function addSong(e) {
-    e.preventDefault();
-    const f = new FormData(e.target);
-    const song = f.get("song")?.trim();
-    if (!song) return;
-    if (songs.length >= 12) {
-      setError("ניתן להזין עד 12 שירים.");
-      return;
-    }
-    setSongs((prev) => [...prev, song]);
-    e.target.reset();
-  }
-
-  const finalPlaylistName = isValidPlaylistName(playlistName)
-    ? playlistName.trim()
-    : "AI Playlist";
+  const finalPlaylistName = isValidPlaylistName(playlistName) ? playlistName.trim() : "AI Playlist";
 
   return (
-    <main style={{ maxWidth: 980, margin: "0 auto", padding: 24 }}>
-      {/* Label + helper ליד שם הפלייליסט */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <label style={{ display: "block", marginBottom: 6, fontWeight: 600 }}>
-          שם הפלייליסט
-        </label>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <input
-            value={playlistName}
-            onChange={(e) => setPlaylistName(e.target.value)}
-            placeholder="לדוגמה: Roadtrip Vibes"
-            style={{
-              padding: 10,
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              flex: 1,
-            }}
-          />
-          <span style={{ color: "#6b7280", fontSize: ".9rem" }}>
-            זה השם שיופיע כשניצור את הפלייליסט בחשבון ה-Spotify שלך
-          </span>
-        </div>
-      </div>
+    <main className="page">
 
-      <div
-        className="card"
-        style={{ display: "flex", flexDirection: "column", gap: 10 }}
-      >
-        <label style={{ display: "block", fontWeight: 600, marginBottom: 4 }}>
-          חפש והוסף שיר (אוטוקומפליט)
-        </label>
-        <div style={{ display: "flex", gap: 10 }}>
-          <div style={{ flex: 1 }}>
+      {view === "select" && (
+        <>
+          {/* Playlist name */}
+          <div className="card">
+            <div className="section-title">Playlist name</div>
+            <div style={{display:"flex", gap:12, alignItems:"center"}}>
+              <input
+                className="input"
+                value={playlistName}
+                onChange={e => setPlaylistName(e.target.value)}
+                placeholder="e.g. Night Drive Vibes"
+              />
+              <span className="inline-note">זה השם שיופיע כשניצור את הפלייליסט בחשבון ה-Spotify שלך</span>
+            </div>
+          </div>
+
+          {/* Search + typeahead */}
+          <div className="card">
+            <div className="section-title">Search for songs</div>
             <TypeaheadInput
               disabled={songs.length >= 12}
               onAdd={(line) => {
-                // מוודא שלא עוברים 12 ושאין כפילויות א-ב’
-                if (songs.length >= 12) {
-                  setError("ניתן להזין עד 12 שירים.");
-                  return;
-                }
-                if (
-                  songs.some(
-                    (s) => s.toLowerCase().trim() === line.toLowerCase().trim()
-                  )
-                ) {
-                  setError("השיר כבר קיים ברשימה.");
-                  return;
-                }
-                setSongs((prev) => [...prev, line]);
+                if (songs.length >= 12) return setError("ניתן להזין עד 12 שירים.");
+                if (songs.some(s => s.toLowerCase().trim() === line.toLowerCase().trim()))
+                  return setError("השיר כבר קיים ברשימה.");
+                setSongs(prev => [...prev, line]);
                 setError("");
               }}
+              maxItems={12}
             />
+            <p className="inline-note" style={{marginTop:8}}>
+              בחירה מוסיפה בפורמט <code>Title - Artist</code>. ניתן להוסיף 5–12 שירים.
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              // אופציונלי: כפתור “נקה חיפוש” אם תרצה לוגיקה נוספת
-            }}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              background: "#fff",
-            }}
-          >
-            ניקוי
-          </button>
-        </div>
-        <p style={{ color: "#6B7280", margin: 0, fontSize: ".9rem" }}>
-          בחירה מהתוצאות מוסיפה אוטומטית בפורמט <code>Title - Artist</code>
-        </p>
-      </div>
 
-      {songs.length === 0 && (
-        <p style={{ color: "#6B7280", marginTop: 12 }}>
-          הוסף לפחות 5 שירים (בפורמט <code>Title - Artist</code>) ואז לחץ
-          Generate Playlist.
-        </p>
+          {/* Progress */}
+          <div className="card">
+            <div className="section-title">Progress</div>
+            <div className="progress" aria-label="artists progress">
+              <div className="fill" style={{ width: `${artistsProgress}%` }} />
+            </div>
+            <div style={{display:"flex", justifyContent:"space-between", marginTop:8, color:"#cfd0ff"}}>
+              <span>{uniqArtists.length}/5+ artists selected ({songs.length} songs)</span>
+            </div>
+
+            {!!artistsDisplay.length && (
+              <>
+                <div className="section-title" style={{marginTop:12}}>Selected artists</div>
+                <div className="chips">
+                  {artistsDisplay.map(a => <span key={a} className="chip">{a}</span>)}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* User songs */}
+          <div className="card">
+            <div className="section-title">Your songs</div>
+            {songs.length === 0 ? (
+              <p className="inline-note">הוסף לפחות 5 שירים כדי להמשיך.</p>
+            ) : (
+              <ul className="user-songs" style={{textAlign:"left", maxWidth:760, margin:"8px auto"}}>
+                {songs.map((s, i) => (
+                  <li key={i} style={{marginBottom:6, display:"flex", justifyContent:"space-between", gap:10}}>
+                    <span>{s}</span>
+                    <button className="btn small ghost" onClick={() =>
+                      setSongs(prev => prev.filter((_, idx) => idx !== i))
+                    }>Remove</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {error && (
+              <div style={{
+                marginTop:12, padding:"10px 12px", borderRadius:12,
+                border:"1px solid #6b1f1f", background:"#2a0f15", color:"#ffb3b3"
+              }}>
+                ⚠️ {error}
+              </div>
+            )}
+
+            <div style={{display:"flex", justifyContent:"center", marginTop:14}}>
+              <button className="btn primary" onClick={getPlaylist} disabled={songs.length < 5 || loading}>
+                {loading ? "Generating…" : "Generate Playlist"}
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
-      <SongsList songs={songs} />
+      {view === "result" && (
+        <>
+          <div style={{marginBottom:12}}>
+            <button className="btn ghost small" onClick={() => setView("select")}>← Back to Selection</button>
+          </div>
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          gap: 12,
-          marginTop: 12,
-        }}
-      >
-        <button
-          onClick={getPlaylist}
-          disabled={songs.length < 5}
-          style={{
-            padding: "10px 16px",
-            borderRadius: 8,
-            background: "#111827",
-            color: "#fff",
-            border: "none",
-            cursor: songs.length < 5 ? "not-allowed" : "pointer",
-          }}
-        >
-          Generate Playlist
-        </button>
-      </div>
+          <div className="result-header">
+            <div className="result-title">
+              <span className="disc" />
+              Your AI-Generated Playlist
+            </div>
+            <div style={{display:"flex", gap:8, alignItems:"center"}}>
+              <AddToSpotifyButton playlistText={playlistText} playlistName={finalPlaylistName} />
+            </div>
+          </div>
 
-      {loading && <p>Loading…</p>}
+          <div className="card" style={{marginBottom:16}}>
+            <div className="section-title">Based on your selections:</div>
+            <div className="chips">
+              {songs.slice(0,5).map((s,i) => (
+                <span className="chip" key={i} style={{background:"#232347"}}>{s}</span>
+              ))}
+            </div>
+          </div>
 
-      {/* הודעת שגיאה מודרנית */}
-      {error && (
-        <div
-          className="alert"
-          style={{
-            margin: "12px auto",
-            padding: "12px 14px",
-            borderRadius: 10,
-            border: "1px solid #fecaca",
-            background: "#fff1f2",
-            color: "#7f1d1d",
-            maxWidth: 780,
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            boxShadow: "0 10px 20px rgba(2,6,23,0.04)",
-          }}
-        >
-          <span style={{ fontSize: "1.25rem" }}>⚠️</span>
-          <span>{error}</span>
-        </div>
-      )}
-
-      {playlistText && <ClaudePlaylist playlistText={playlistText} />}
-
-      {playlistText && (
-        <div
-          style={{ display: "flex", justifyContent: "center", marginTop: 12 }}
-        >
-          <AddToSpotifyButton
-            playlistText={playlistText}
-            playlistName={finalPlaylistName}
-          />
-        </div>
+          <div className="card">
+            <div className="section-title">Generated Playlist</div>
+            <ol className="playlist">
+              {(playlistText || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean).map((line, i) => {
+                // פירוק "Title - Artist" לתצוגה נעימה
+                const [title, ...rest] = line.split(/[-–—]/);
+                const artist = rest.join("-").trim();
+                return (
+                  <li key={i}>
+                    <span className="track-title">{title?.trim()}</span>
+                    <span className="track-meta">{artist}</span>
+                  </li>
+                );
+              })}
+            </ol>
+            <div style={{display:"flex", justifyContent:"center", marginTop:14}}>
+              <button className="btn green" onClick={()=>{
+                // שומר על אותו UX כמו הכפתור הירוק — אפשר להשאיר רק אחד אם תרצה
+                const a = document.querySelector('button[title="הוספת הפלייליסט לחשבון ה-Spotify שלך"]');
+                a?.click();
+              }}>Add to Spotify</button>
+            </div>
+          </div>
+        </>
       )}
     </main>
   );

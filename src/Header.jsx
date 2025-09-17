@@ -1,10 +1,11 @@
-// import chefClaudeLogo from "./images/chef-claude-icon.png"
-
+// src/Header.jsx
 export default function Header() {
-    return (
-        <header>
-            {/* <img src={chefClaudeLogo}/> */}
-            <h1>Chef Claude</h1>
-        </header>
-    )
+  return (
+    <header className="header">
+      <h1>
+        <span className="logo">🎵</span>
+        AI Playlist Generator
+      </h1>
+    </header>
+  );
 }

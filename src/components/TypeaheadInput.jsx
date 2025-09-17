@@ -1,6 +1,5 @@
-// /src/components/TypeaheadInput.jsx
+// src/components/TypeaheadInput.jsx
 import React from "react";
-
 const DEBOUNCE_MS = 250;
 
 export default function TypeaheadInput({ disabled, onAdd, maxItems = 12 }) {
@@ -9,9 +8,9 @@ export default function TypeaheadInput({ disabled, onAdd, maxItems = 12 }) {
   const [tracks, setTracks] = React.useState([]);
   const [open, setOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
-  const [highlight, setHighlight] = React.useState({ section: "tracks", index: 0 }); // or "artists"
+  const [highlight, setHighlight] = React.useState({ section: "tracks", index: 0 });
   const [expandedArtistId, setExpandedArtistId] = React.useState(null);
-  const [expandedTracks, setExpandedTracks] = React.useState([]); // top-tracks of selected artist
+  const [expandedTracks, setExpandedTracks] = React.useState([]);
 
   const inputRef = React.useRef(null);
   const boxRef = React.useRef(null);
@@ -46,17 +45,9 @@ export default function TypeaheadInput({ disabled, onAdd, maxItems = 12 }) {
         setArtists(data.artists || []);
         setTracks(data.tracks || []);
         setOpen(true);
-        // reset highlight to first item available
-        if ((data.tracks || []).length) {
-          setHighlight({ section: "tracks", index: 0 });
-        } else if ((data.artists || []).length) {
-          setHighlight({ section: "artists", index: 0 });
-        }
-      } catch (e) {
-        // ignore
-      } finally {
-        setLoading(false);
-      }
+        if ((data.tracks || []).length) setHighlight({ section: "tracks", index: 0 });
+        else if ((data.artists || []).length) setHighlight({ section: "artists", index: 0 });
+      } catch {} finally { setLoading(false); }
     }, DEBOUNCE_MS);
     return () => clearTimeout(tRef.current);
   }, [q]);
@@ -78,36 +69,28 @@ export default function TypeaheadInput({ disabled, onAdd, maxItems = 12 }) {
 
   function selectTrack(track) {
     if (!track?.name || !track?.artist) return;
-    const line = `${track.name} - ${track.artist}`; // הפורמט שומר תאימות
+    const line = `${track.name} - ${track.artist}`;
     onAdd?.(line);
     setQ("");
-    setArtists([]); setTracks([]);
-    setExpandedArtistId(null);
-    setExpandedTracks([]);
-    setOpen(false);
+    setArtists([]); setTracks([]); setExpandedArtistId(null); setExpandedTracks([]); setOpen(false);
   }
 
   function onKeyDown(e) {
     if (!open) return;
-    const totalT = tracks.length;
-    const totalA = artists.length;
-
+    const totalT = tracks.length, totalA = artists.length;
     const move = (dir) => {
       const list = highlight.section === "tracks" ? tracks : artists;
       const len = list.length;
       if (!len) {
-        // hop to other section if possible
         if (highlight.section === "tracks" && totalA) setHighlight({ section: "artists", index: 0 });
         else if (highlight.section === "artists" && totalT) setHighlight({ section: "tracks", index: 0 });
         return;
       }
       let idx = highlight.index + dir;
       if (idx < 0) {
-        // wrap to previous section
         if (highlight.section === "tracks" && totalA) setHighlight({ section: "artists", index: Math.max(0, totalA - 1) });
         else if (highlight.section === "artists" && totalT) setHighlight({ section: "tracks", index: Math.max(0, totalT - 1) });
       } else if (idx >= len) {
-        // wrap to next section
         if (highlight.section === "tracks" && totalA) setHighlight({ section: "artists", index: 0 });
         else if (highlight.section === "artists" && totalT) setHighlight({ section: "tracks", index: 0 });
       } else {
@@ -119,14 +102,9 @@ export default function TypeaheadInput({ disabled, onAdd, maxItems = 12 }) {
     else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
     else if (e.key === "Enter") {
       e.preventDefault();
-      if (highlight.section === "tracks" && tracks[highlight.index]) {
-        selectTrack(tracks[highlight.index]);
-      } else if (highlight.section === "artists" && artists[highlight.index]) {
-        expandArtistTop(artists[highlight.index]);
-      }
-    } else if (e.key === "Escape") {
-      close();
-    }
+      if (highlight.section === "tracks" && tracks[highlight.index]) selectTrack(tracks[highlight.index]);
+      else if (highlight.section === "artists" && artists[highlight.index]) expandArtistTop(artists[highlight.index]);
+    } else if (e.key === "Escape") { close(); }
   }
 
   return (
@@ -138,34 +116,20 @@ export default function TypeaheadInput({ disabled, onAdd, maxItems = 12 }) {
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
         disabled={disabled}
-        placeholder='חפש זמר/שיר… למשל: "אייל גולן" או "Bad Guy"'
+        placeholder='Search songs on Spotify...'
         aria-label="Search artist or track"
-        style={{ padding: 10, borderRadius: 8, border: "1px solid #e5e7eb", width: "100%" }}
+        className="input"
       />
 
       {open && (artists.length || tracks.length || loading) ? (
-        <div
-          className="autocomplete-scroll"
-          style={{
-            position: "absolute",
-            top: "calc(100% + 6px)",
-            left: 0,
-            right: 0,
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 10,
-            boxShadow: "0 10px 30px rgba(2,6,23,0.12)",
-            zIndex: 20
-            // אין overflow/maxHeight כאן — זה מגיע מה-CSS .autocomplete-scroll
-          }}
-        >
+        <div className="autocomplete-scroll" style={{ position:"absolute", top:"calc(100% + 6px)", left:0, right:0, zIndex:20 }}>
           {loading && (
-            <div style={{ padding: 10, color: "#6b7280", fontSize: ".9rem" }}>מחפש…</div>
+            <div style={{ padding: 10, color: "var(--muted)", fontSize: ".9rem" }}>מחפש…</div>
           )}
 
           {tracks.length > 0 && (
             <div>
-              <div style={{ padding: "8px 12px", fontSize: ".8rem", color: "#6b7280" }}>שירים</div>
+              <div style={{ padding: "8px 12px", fontSize: ".8rem", color: "var(--muted)" }}>שירים</div>
               {tracks.map((t, idx) => {
                 const active = highlight.section === "tracks" && highlight.index === idx;
                 return (
@@ -174,15 +138,13 @@ export default function TypeaheadInput({ disabled, onAdd, maxItems = 12 }) {
                     onMouseEnter={() => setHighlight({ section: "tracks", index: idx })}
                     onMouseDown={e => e.preventDefault()}
                     onClick={() => selectTrack(t)}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 10, padding: 10, cursor: "pointer",
-                      background: active ? "#f3f4f6" : "#fff"
-                    }}
+                    className={`autocomplete-item${active ? " active" : ""}`}
+                    style={{ display:"flex", alignItems:"center", gap:10, padding:10, cursor:"pointer" }}
                   >
                     {t.image && <img src={t.image} alt="" width={36} height={36} style={{ borderRadius: 6, objectFit: "cover" }} />}
-                    <div style={{ display: "flex", flexDirection: "column" }}>
-                      <span style={{ fontSize: ".95rem" }}>{t.name}</span>
-                      <span style={{ fontSize: ".8rem", color: "#6b7280" }}>{t.artist}</span>
+                    <div style={{ display:"flex", flexDirection:"column" }}>
+                      <span style={{ fontSize: ".95rem", color:"#fff" }}>{t.name}</span>
+                      <span className="sub">{t.artist}</span>
                     </div>
                   </div>
                 );
@@ -191,44 +153,39 @@ export default function TypeaheadInput({ disabled, onAdd, maxItems = 12 }) {
           )}
 
           {artists.length > 0 && (
-            <div style={{ borderTop: "1px solid #f1f5f9" }}>
-              <div style={{ padding: "8px 12px", fontSize: ".8rem", color: "#6b7280" }}>אמנים</div>
+            <div style={{ borderTop: "1px solid var(--border)" }}>
+              <div style={{ padding: "8px 12px", fontSize: ".8rem", color: "var(--muted)" }}>אמנים</div>
               {artists.map((a, idx) => {
                 const active = highlight.section === "artists" && highlight.index === idx;
                 const expanded = expandedArtistId === a.id;
                 return (
-                  <div key={a.id} style={{ borderTop: "1px solid #f8fafc" }}>
+                  <div key={a.id} style={{ borderTop: "1px solid rgba(255,255,255,.04)" }}>
                     <div
                       onMouseEnter={() => setHighlight({ section: "artists", index: idx })}
                       onMouseDown={e => e.preventDefault()}
                       onClick={() => expandArtistTop(a)}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 10, padding: 10, cursor: "pointer",
-                        background: active ? "#f3f4f6" : "#fff"
-                      }}
+                      className={`autocomplete-item${active ? " active" : ""}`}
+                      style={{ display:"flex", alignItems:"center", gap:10, padding:10, cursor:"pointer" }}
                     >
-                      {a.image && <img src={a.image} alt="" width={36} height={36} style={{ borderRadius: "50%", objectFit: "cover" }} />}
-                      <div style={{ display: "flex", flexDirection: "column" }}>
-                        <span style={{ fontSize: ".95rem" }}>{a.name}</span>
-                        <span style={{ fontSize: ".8rem", color: "#6b7280" }}>הצג שירים פופולריים</span>
+                      {a.image && <img src={a.image} alt="" width={36} height={36} style={{ borderRadius: "50%", objectFit:"cover" }} />}
+                      <div style={{ display:"flex", flexDirection:"column" }}>
+                        <span style={{ color:"#fff" }}>{a.name}</span>
+                        <span className="sub">הצג שירים פופולריים</span>
                       </div>
                     </div>
                     {expanded && expandedTracks.length > 0 && (
-                      <div style={{ background: "#fafafa", padding: "6px 8px" }}>
+                      <div style={{ background: "rgba(255,255,255,.02)", padding: "6px 8px" }}>
                         {expandedTracks.slice(0, 6).map(t => (
                           <div
                             key={t.id}
                             onMouseDown={e => e.preventDefault()}
                             onClick={() => selectTrack(t)}
-                            style={{
-                              display: "flex", alignItems: "center", gap: 10, padding: 8, cursor: "pointer",
-                              borderRadius: 8
-                            }}
+                            style={{ display:"flex", alignItems:"center", gap:10, padding:8, cursor:"pointer", borderRadius:8 }}
                           >
                             {t.image && <img src={t.image} alt="" width={28} height={28} style={{ borderRadius: 6, objectFit: "cover" }} />}
-                            <div style={{ display: "flex", flexDirection: "column" }}>
-                              <span style={{ fontSize: ".9rem" }}>{t.name}</span>
-                              <span style={{ fontSize: ".75rem", color: "#6b7280" }}>{t.artist}</span>
+                            <div style={{ display:"flex", flexDirection:"column" }}>
+                              <span style={{ color:"#fff" }}>{t.name}</span>
+                              <span className="sub">{t.artist}</span>
                             </div>
                           </div>
                         ))}
@@ -241,7 +198,7 @@ export default function TypeaheadInput({ disabled, onAdd, maxItems = 12 }) {
           )}
 
           {!loading && tracks.length === 0 && artists.length === 0 && (
-            <div style={{ padding: 10, color: "#6b7280", fontSize: ".9rem" }}>לא נמצאו תוצאות.</div>
+            <div style={{ padding: 10, color: "var(--muted)", fontSize: ".9rem" }}>לא נמצאו תוצאות.</div>
           )}
         </div>
       ) : null}
