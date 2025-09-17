@@ -1,5 +1,3 @@
-/* src/index.css — Dark Theme like screenshots */
-
 :root{
   --bg:#0b0b14;
   --surface:#141428;
@@ -7,133 +5,99 @@
   --border:#262644;
   --text:#e7e7f5;
   --muted:#a3a5c1;
-  --accent:#8b5cf6;      /* neon purple */
+  --accent:#8b5cf6;
   --accent-2:#7c3aed;
-  --green:#1DB954;       /* Spotify green */
+  --green:#1DB954;
   --chip:#28284a;
   --shadow:0 18px 40px rgba(0,0,0,.35);
 }
 
-* { box-sizing: border-box; }
-html,body,#root { height: 100%; }
+*{box-sizing:border-box}
+html,body,#root{height:100%}
 body{
   margin:0;
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-  background: radial-gradient(1200px 600px at 50% -100px, #1a1630 0%, var(--bg) 60%);
+  font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;
+  background:radial-gradient(1200px 600px at 50% -100px,#1a1630 0%,var(--bg) 60%);
   color:var(--text);
 }
 
-/* Layout */
-.page { max-width: 1040px; margin: 28px auto; padding: 0 24px 48px; }
-.header {
-  height:76px; display:flex; align-items:center; justify-content:center;
-  background:linear-gradient(180deg, #18162a, #121224);
-  box-shadow: inset 0 -1px 0 rgba(255,255,255,.06);
-  position:sticky; top:0; z-index:10;
+/* Header */
+.header{
+  height:76px;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(180deg,#18162a,#121224);
+  box-shadow:inset 0 -1px 0 rgba(255,255,255,.06);
+  position:sticky;top:0;z-index:10;
 }
-.header h1 { margin:0; font-weight:700; letter-spacing:.3px; display:flex; gap:10px; align-items:center; }
-.header .logo {
-  width:34px; height:34px; border-radius:10px;
-  background: radial-gradient(100% 100% at 50% 0%, #b495ff 0%, #7e5cf7 60%, #5b3ae0 100%);
-  display:inline-flex; align-items:center; justify-content:center; font-size:18px; color:white;
-  box-shadow: 0 10px 30px rgba(139,92,246,.35);
+.header h1{margin:0;font-weight:700;letter-spacing:.3px;display:flex;gap:10px;align-items:center}
+.header .logo{
+  width:34px;height:34px;border-radius:10px;
+  background:radial-gradient(100% 100% at 50% 0%,#b495ff 0%,#7e5cf7 60%,#5b3ae0 100%);
+  display:inline-flex;align-items:center;justify-content:center;color:#fff;
+  box-shadow:0 10px 30px rgba(139,92,246,.35)
 }
 
-/* Cards & surfaces */
+/* Layout */
+.page{max-width:1040px;margin:28px auto;padding:0 24px 48px}
+
+/* Cards */
 .card{
-  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)) , var(--surface);
+  background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02)),var(--surface);
   border:1px solid var(--border);
   border-radius:16px;
-  box-shadow: var(--shadow);
+  box-shadow:var(--shadow);
   padding:16px;
 }
-.card + .card { margin-top: 14px; }
+.card + .card{margin-top:14px}
 
-.section-title{
-  font-size:1rem; font-weight:600; opacity:.95; margin:0 0 8px;
-}
+/* Labels / titles */
+.section-title{font-size:1rem;font-weight:600;opacity:.95;margin:0 0 8px}
 
 /* Inputs */
 .input{
-  width:100%; padding:12px 14px; border-radius:12px;
-  background:var(--surface-2); border:1px solid var(--border); color:var(--text);
-  outline:none; transition:border-color .15s ease;
+  width:100%;padding:12px 14px;border-radius:12px;
+  background:var(--surface-2);border:1px solid var(--border);color:var(--text);
+  outline:none;transition:border-color .15s
 }
-.input::placeholder{ color:#8e90b3; }
-.input:focus{ border-color:#6d4df0; box-shadow:0 0 0 3px rgba(139,92,246,.2); }
-
-.inline-note{ color:var(--muted); font-size:.9rem; }
+.input::placeholder{color:#8e90b3}
+.input:focus{border-color:#6d4df0;box-shadow:0 0 0 3px rgba(139,92,246,.2)}
+.inline-note{color:var(--muted);font-size:.9rem}
 
 /* Buttons */
-.btn{
-  border:none; border-radius:12px; padding:12px 18px;
-  font-weight:700; letter-spacing:.2px; cursor:pointer;
-  background:#2c2c3f; color:#fff; transition: transform .05s, background .15s;
-}
-.btn:hover{ background:#343452; }
-.btn:active{ transform: translateY(1px); }
-.btn.primary{ background:linear-gradient(180deg, var(--accent), var(--accent-2)); }
-.btn.primary:hover{ filter:brightness(1.03); }
-.btn.green{ background: var(--green); }
-.btn.green:hover{ filter:brightness(1.05); }
-.btn.ghost{
-  background: transparent; border:1px solid var(--border); color:#cfd0ff;
-}
-.btn.small{ padding:8px 12px; border-radius:10px; font-weight:600; }
+.btn{border:none;border-radius:12px;padding:12px 18px;font-weight:700;cursor:pointer;background:#2c2c3f;color:#fff}
+.btn:hover{background:#343452}
+.btn.primary{background:linear-gradient(180deg,var(--accent),var(--accent-2))}
+.btn.green{background:var(--green)}
+.btn.ghost{background:transparent;border:1px solid var(--border);color:#cfd0ff}
+.btn.small{padding:8px 12px;border-radius:10px;font-weight:600}
 
-/* Chips (selected artists) */
-.chips{ display:flex; gap:8px; flex-wrap:wrap; }
-.chip{
-  background:var(--chip);
-  color:#d6d7ff; border:1px solid var(--border); border-radius:999px;
-  padding:6px 10px; font-size:.85rem; display:inline-flex; align-items:center; gap:6px;
-}
-.chip:before{ content:"✓"; font-size:.8rem; opacity:.8; }
+/* Chips */
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{background:var(--chip);color:#d6d7ff;border:1px solid var(--border);border-radius:999px;padding:6px 10px;font-size:.85rem;display:inline-flex;align-items:center;gap:6px}
+.chip::before{content:"✓";font-size:.8rem;opacity:.8}
+.chip.selected{background:#2f2b56;border-color:#6d4df0}
 
 /* Progress */
-.progress{
-  background:#0e0e1b; border:1px solid var(--border);
-  border-radius:10px; height:10px; position:relative; overflow:hidden;
-}
-.progress > .fill{
-  position:absolute; left:0; top:0; bottom:0; width:0%;
-  background:linear-gradient(90deg, #6d4df0, #a78bfa);
-  box-shadow:0 0 18px rgba(139,92,246,.5) inset;
-  transition: width .35s ease;
-}
+.progress{background:#0e0e1b;border:1px solid var(--border);border-radius:10px;height:10px;position:relative;overflow:hidden}
+.progress>.fill{position:absolute;inset:0 auto 0 0;width:0;background:linear-gradient(90deg,#6d4df0,#a78bfa);transition:width .35s}
 
-/* List of user's chosen songs */
-.user-songs li{ color:#cfd0ff; }
+/* Results header */
+.result-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.result-title{font-size:2rem;font-weight:800;letter-spacing:.4px;display:flex;align-items:center;gap:12px}
+.result-title .disc{width:44px;height:44px;border-radius:12px;background:radial-gradient(100% 100% at 50% 0%,#b495ff 0%,#7e5cf7 60%,#5b3ae0 100%);box-shadow:0 10px 30px rgba(139,92,246,.35)}
 
-/* Result page */
-.result-header{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
-.result-title{
-  font-size:2rem; font-weight:800; letter-spacing:.4px;
-  display:flex; align-items:center; gap:12px;
-}
-.result-title .disc{
-  width:44px; height:44px; border-radius:12px;
-  background: radial-gradient(100% 100% at 50% 0%, #b495ff 0%, #7e5cf7 60%, #5b3ae0 100%);
-  box-shadow:0 10px 30px rgba(139,92,246,.35);
-}
-
-/* Generated list */
-ol.playlist{
-  list-style:decimal; padding-left:28px; margin: 10px 0 0;
-}
+/* Generated playlist list */
+ol.playlist{list-style:decimal;padding-left:28px;margin:10px 0 0}
 ol.playlist li{
-  display:flex; justify-content:space-between; align-items:center;
-  gap:12px; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.06);
+  display:flex;justify-content:space-between;gap:12px;
+  padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06)
 }
-.track-title{ color:#fff; }
-.track-meta{ color:#b6b8d8; font-size:.9rem; }
+.track-title{color:var(--text);flex:1}  /* ← חשוב! כותרת השיר תהיה בצד שמאל ובולטת */
+.track-meta{color:var(--muted)}
 
-/* Autocomplete popover (dark) */
+/* Typeahead dropdown */
 .autocomplete-scroll{
-  max-height: 360px; overflow:auto; scrollbar-width: thin;
-  background: var(--surface-2); border:1px solid var(--border); border-radius:12px;
-  box-shadow: var(--shadow);
+  max-height:360px;overflow:auto;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)
 }
-.autocomplete-item{ background:transparent; }
-.autocomplete-item.active{ background:#202041; }
-.autocomplete-item .sub{ color:#9aa0c6; font-size:.85rem; }
+.autocomplete-item.active{background:#202041}
+.autocomplete-item .sub{color:#9aa0c6;font-size:.85rem}
