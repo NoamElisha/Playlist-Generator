@@ -13,17 +13,16 @@ export default function Toaster() {
         text: e?.detail?.text || "",
       };
       setToasts((prev) => [...prev, t]);
-      setTimeout(
-        () => setToasts((prev) => prev.filter((x) => x.id !== id)),
-        4000
-      );
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((x) => x.id !== id));
+      }, 4000);
     };
 
-    // מקשיב ל־"toast" (שם האירוע שהכפתור שולח) וגם ל־"app:toast" לגיבוי
+    // מאזין ל־"toast" (האירוע שנשלח מהכפתור) וגם ל־"app:toast" לגיבוי
     window.addEventListener("toast", onToast);
     window.addEventListener("app:toast", onToast);
 
-    // עזר לדיבוג בקונסול: toast("שלום", "success")
+    // עזר לדיבוג: בחלון הקונסול אפשר להריץ toast("בדיקה", "success")
     window.toast = (text, type = "info") =>
       window.dispatchEvent(new CustomEvent("toast", { detail: { type, text } }));
 
@@ -34,7 +33,7 @@ export default function Toaster() {
   }, []);
 
   return (
-    <div className="toast-wrap">
+    <div className="toast-wrap toast-right"> {/* ← קלאס חדש למיקום ימין */}
       {toasts.map((t) => (
         <div key={t.id} className={`toast ${t.type}`}>
           <div className="toast-title">

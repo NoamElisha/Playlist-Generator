@@ -59,6 +59,7 @@ export default function AddToSpotifyButton({ playlistText, playlistName }) {
 
   return (
     <button
+      type="button"            // ← מונע submit במקרה שנמצא בתוך <form>
       onClick={handleAdd}
       className="btn green"
       title="הוספת הפלייליסט לחשבון ה-Spotify שלך"
