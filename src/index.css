@@ -113,11 +113,10 @@ ol.playlist li{
   z-index: 1000;
 }
 
-/* ברירת מחדל – שמאל (נשאיר למקרה שתרצה להשתמש) */
-.toast-left { left: 16px; }
-
-/* מיקום בצד ימין (בשימוש בפועל) */
+/* ימין למטה */
 .toast-right { right: 16px; }
+/* נשאיר אופציה לשמאל אם תרצה בעתיד */
+.toast-left  { left: 16px; }
 
 .toast{
   min-width: 260px;

@@ -18,30 +18,31 @@ export default function Toaster() {
       }, 4000);
     };
 
-    // מאזין ל־"toast" (האירוע שנשלח מהכפתור) וגם ל־"app:toast" לגיבוי
-    window.addEventListener("toast", onToast);
-    window.addEventListener("app:toast", onToast);
+    // נאזין גם ל-window וגם ל-document לשם "toast" ו-"app:toast"
+    const names = ["toast", "app:toast"];
+    names.forEach((n) => {
+      window.addEventListener(n, onToast);
+      document.addEventListener(n, onToast);
+    });
 
-    // עזר לדיבוג: בחלון הקונסול אפשר להריץ toast("בדיקה", "success")
+    // עזר דיבוג: window.toast("הי", "success")
     window.toast = (text, type = "info") =>
       window.dispatchEvent(new CustomEvent("toast", { detail: { type, text } }));
 
     return () => {
-      window.removeEventListener("toast", onToast);
-      window.removeEventListener("app:toast", onToast);
+      names.forEach((n) => {
+        window.removeEventListener(n, onToast);
+        document.removeEventListener(n, onToast);
+      });
     };
   }, []);
 
   return (
-    <div className="toast-wrap toast-right"> {/* ← קלאס חדש למיקום ימין */}
+    <div className="toast-wrap toast-right">
       {toasts.map((t) => (
         <div key={t.id} className={`toast ${t.type}`}>
           <div className="toast-title">
-            {t.type === "success"
-              ? "Success 🎉"
-              : t.type === "error"
-              ? "Error ❗"
-              : "Info"}
+            {t.type === "success" ? "Success 🎉" : t.type === "error" ? "Error ❗" : "Info"}
           </div>
           <div className="toast-text">{t.text}</div>
         </div>
