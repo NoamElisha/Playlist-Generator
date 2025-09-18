@@ -7,19 +7,28 @@ export default function Toaster() {
   React.useEffect(() => {
     const onToast = (e) => {
       const id = Math.random().toString(36).slice(2);
-      const t = { id, type: e.detail?.type || "info", text: e.detail?.text || "" };
+      const t = {
+        id,
+        type: e?.detail?.type || "info",
+        text: e?.detail?.text || "",
+      };
       setToasts((prev) => [...prev, t]);
-      setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== id)), 4000);
+      setTimeout(
+        () => setToasts((prev) => prev.filter((x) => x.id !== id)),
+        4000
+      );
     };
-    document.addEventListener("app:toast", onToast);
-    window.addEventListener("app:toast", onToast); // גיבוי
 
-    // אופציונלי: עזר לדיבוג מהקונסול
+    // מקשיב ל־"toast" (שם האירוע שהכפתור שולח) וגם ל־"app:toast" לגיבוי
+    window.addEventListener("toast", onToast);
+    window.addEventListener("app:toast", onToast);
+
+    // עזר לדיבוג בקונסול: toast("שלום", "success")
     window.toast = (text, type = "info") =>
-      document.dispatchEvent(new CustomEvent("app:toast", { detail: { type, text }, bubbles: true, composed: true }));
+      window.dispatchEvent(new CustomEvent("toast", { detail: { type, text } }));
 
     return () => {
-      document.removeEventListener("app:toast", onToast);
+      window.removeEventListener("toast", onToast);
       window.removeEventListener("app:toast", onToast);
     };
   }, []);
@@ -29,7 +38,11 @@ export default function Toaster() {
       {toasts.map((t) => (
         <div key={t.id} className={`toast ${t.type}`}>
           <div className="toast-title">
-            {t.type === "success" ? "Success 🎉" : t.type === "error" ? "Error ❗" : "Info"}
+            {t.type === "success"
+              ? "Success 🎉"
+              : t.type === "error"
+              ? "Error ❗"
+              : "Info"}
           </div>
           <div className="toast-text">{t.text}</div>
         </div>
