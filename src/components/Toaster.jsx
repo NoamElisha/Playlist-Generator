@@ -13,27 +13,21 @@ export default function Toaster() {
         text: e?.detail?.text || "",
       };
       setToasts((prev) => [...prev, t]);
+      // 9 שניות (הגדלנו ב+5 שניות)
       setTimeout(() => {
         setToasts((prev) => prev.filter((x) => x.id !== id));
-      }, 4000);
+      }, 9000);
     };
 
-    // נאזין גם ל-window וגם ל-document לשם "toast" ו-"app:toast"
-    const names = ["toast", "app:toast"];
-    names.forEach((n) => {
-      window.addEventListener(n, onToast);
-      document.addEventListener(n, onToast);
-    });
+    // מאזין יחיד – רק window ו"רק" לאירוע בשם toast
+    window.addEventListener("toast", onToast);
 
-    // עזר דיבוג: window.toast("הי", "success")
+    // עזר דיבוג: window.toast("היי", "success")
     window.toast = (text, type = "info") =>
       window.dispatchEvent(new CustomEvent("toast", { detail: { type, text } }));
 
     return () => {
-      names.forEach((n) => {
-        window.removeEventListener(n, onToast);
-        document.removeEventListener(n, onToast);
-      });
+      window.removeEventListener("toast", onToast);
     };
   }, []);
 

@@ -299,7 +299,7 @@ export default function Body() {
                   );
                 })}
             </ol>
-            <div
+            {/* <div
               style={{
                 display: "flex",
                 justifyContent: "center",
@@ -310,7 +310,7 @@ export default function Body() {
                 playlistText={playlistText}
                 playlistName={finalPlaylistName}
               />
-            </div>
+            </div> */}
           </div>
         </>
       )}
