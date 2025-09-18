@@ -2,9 +2,10 @@
 import { parsePlaylistTextToTracks } from "../utils/parsePlaylistText";
 
 export default function AddToSpotifyButton({ playlistText, playlistName }) {
-  const tracks = parsePlaylistTextToTracks(playlistText);
+  
 
   async function handleAdd() {
+    const tracks = parsePlaylistTextToTracks(playlistText);
     try {
       console.log(
         "▶ Creating playlist on Spotify, tracks:",
@@ -30,17 +31,27 @@ export default function AddToSpotifyButton({ playlistText, playlistName }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create playlist");
 
-      // ✅ הודעת הצלחה + פתיחת הפלייליסט
-      const msg = `✅ נוצר פלייליסט ב-Spotify: ${
-        playlistName || "AI Playlist"
-      }\nהוספנו ${data.added} שירים.`;
-      alert(msg);
+ 
+      window.dispatchEvent(
+        new CustomEvent("toast", {
+          detail: {
+            type: "success",
+            text: `נוצר פלייליסט: ${playlistName || "AI Playlist"} • נוספו ${
+              data.added
+            } שירים`,
+          },
+        })
+      );
       if (data.playlistUrl) {
         window.open(data.playlistUrl, "_blank");
       }
     } catch (err) {
       console.error("AddToSpotifyButton error:", err);
-      alert("Error: " + (err.message || err));
+      window.dispatchEvent(
+        new CustomEvent("toast", {
+          detail: { type: "error", text: err?.message || String(err) },
+        })
+      );
     }
   }
 

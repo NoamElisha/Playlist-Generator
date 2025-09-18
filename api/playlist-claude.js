@@ -3,6 +3,11 @@ const SPOTIFY_MARKET = process.env.SPOTIFY_MARKET || "IL"; // אפשר לשנו�
 const TARGET_MIN = 20; // מינימום קשיח
 const MAX_CONSEC = 2;  // לא יותר מ-2 שירים רצופים מאותו אמן (נרפה רק אם תקוע)
 
+function keyFromLine(line){
+  const p = parseLineToPair(line);
+  return p ? canonicalKey(p.title, p.artist) : (line||"").toLowerCase().trim();
+}
+
 function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 function shuffle(arr){ for (let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]];} return arr; }
 function splitLines(text){ return (text||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean); }
@@ -324,6 +329,29 @@ export default async function handler(req,res){
 
     // ערבוב קל של ה"non-seeds" בתוך האמן עצמו כבר בוצע לפי פופולריות;
     // כאן הרשימה כבר מאוזנת בין אמנים ובד"כ בלי רצפים ארוכים.
+
+    // ✅ הבטחת ה-seeds ברשימה הסופית (לפי normalizedSeeds)
+// ✅ הבטחת ה-seeds ברשימה הסופית (לפי normalizedSeeds) + שמירת סדר המקור
+const seedLines = normalizedSeeds.map(s => `${s.title} - ${s.artist}`);
+const finalKeys = new Set(final.map(keyFromLine));
+const missingSeeds = [];
+
+for (const seed of seedLines) {
+  if (!finalKeys.has(keyFromLine(seed))) {
+    missingSeeds.push(seed);
+    finalKeys.add(keyFromLine(seed));
+  }
+}
+
+// מקדימים את כל החסרים לפי סדר המקור
+if (missingSeeds.length) {
+  final.unshift(...missingSeeds);
+}
+
+// אם עברנו את היעד, נגזור חזרה לאורך היעד (ה-seeds כבר בפנים)
+if (final.length > targetTotal) {
+  final.length = targetTotal;
+}
 
     return res.status(200).json({
       playlistText: final.join("\n"),

@@ -28,7 +28,10 @@ export default function Body() {
 
   const uniqArtists = React.useMemo(() => {
     const s = new Set(
-      songs.map(parseArtist).filter(Boolean).map((a) => a.toLowerCase())
+      songs
+        .map(parseArtist)
+        .filter(Boolean)
+        .map((a) => a.toLowerCase())
     );
     return Array.from(s);
   }, [songs]);
@@ -303,17 +306,10 @@ export default function Body() {
                 marginTop: 14,
               }}
             >
-              <button
-                className="btn green"
-                onClick={() => {
-                  const a = document.querySelector(
-                    'button[title="הוספת הפלייליסט לחשבון ה-Spotify שלך"]'
-                  );
-                  a?.click();
-                }}
-              >
-                Add to Spotify
-              </button>
+              <AddToSpotifyButton
+                playlistText={playlistText}
+                playlistName={finalPlaylistName}
+              />
             </div>
           </div>
         </>

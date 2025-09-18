@@ -101,3 +101,34 @@ ol.playlist li{
 }
 .autocomplete-item.active{background:#202041}
 .autocomplete-item .sub{color:#9aa0c6;font-size:.85rem}
+
+
+.toast-wrap{
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1000;
+}
+.toast{
+  min-width: 260px;
+  max-width: 360px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid #6b7280;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  animation: toast-in .15s ease-out;
+}
+.toast.success{ border-left-color: var(--green); }
+.toast.error{ border-left-color: #ef4444; }
+.toast-title{ font-weight: 700; margin-bottom: 2px; }
+.toast-text{ color: var(--muted); font-size: .9rem; }
+
+@keyframes toast-in{
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
