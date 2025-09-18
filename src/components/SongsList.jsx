@@ -1,4 +1,4 @@
-// src/components/SongsList.jsx
+
 import React from 'react';
 
 export default function SongsList({ songs }) {

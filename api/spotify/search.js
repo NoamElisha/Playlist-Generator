@@ -1,5 +1,4 @@
-// /api/spotify/search.js
-// Proxy מאובטח לאוטוקומפליט: artist/track
+
 const SPOTIFY_MARKET = process.env.SPOTIFY_MARKET || "IL";
 
 async function getSpotifyAppToken() {
@@ -46,7 +45,7 @@ export default async function handler(req, res) {
     const data = await r.json();
     if (!r.ok) return res.status(r.status).json(data);
 
-    // ננרמל תשובה קטנה, קומפקטית ללקוח
+
     const artists = (data.artists?.items || []).map(a => ({
       id: a.id,
       name: a.name,

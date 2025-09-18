@@ -1,4 +1,4 @@
-// api/spotify/login.js
+
 export default function handler(req, res) {
   const client_id = process.env.SPOTIFY_CLIENT_ID;
   const redirect_uri = process.env.SPOTIFY_REDIRECT_URI;
@@ -9,7 +9,7 @@ export default function handler(req, res) {
     'user-read-email'
   ].join(' ');
   const state = Math.random().toString(36).slice(2);
-  // ניתן לשמור state ב-cookie אם רוצים לבדוק CSRF
+
   const url = new URL('https://accounts.spotify.com/authorize');
   url.searchParams.set('client_id', client_id);
   url.searchParams.set('response_type', 'code');

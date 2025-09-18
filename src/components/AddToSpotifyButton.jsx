@@ -1,10 +1,10 @@
-// /src/components/AddToSpotifyButton.jsx
+
 import { useState } from "react";
 import { parsePlaylistTextToTracks } from "../utils/parsePlaylistText";
 
 function emitToast(type, text) {
   const ev = new CustomEvent("toast", { detail: { type, text } });
-  // נירה לשניהם כדי לכסות כל מאזין אפשרי
+ 
   window.dispatchEvent(ev);
   document.dispatchEvent(new CustomEvent("toast", { detail: { type, text } }));
 }
@@ -33,7 +33,7 @@ export default function AddToSpotifyButton({ playlistText, playlistName }) {
       });
 
       if (res.status === 401) {
-        // לא מחוברים – נפנה להתחברות
+    
         window.location.href = "/api/spotify/login";
         return;
       }
@@ -59,7 +59,7 @@ export default function AddToSpotifyButton({ playlistText, playlistName }) {
 
   return (
     <button
-      type="button"                 // חשוב – אין submit
+      type="button"                
       onClick={handleAdd}
       className="btn green"
       title="הוספת הפלייליסט לחשבון ה-Spotify שלך"

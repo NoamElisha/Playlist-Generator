@@ -1,4 +1,4 @@
-// /api/spotify/artist-top-tracks.js
+
 const SPOTIFY_MARKET = process.env.SPOTIFY_MARKET || "IL";
 
 async function getSpotifyAppToken() {
@@ -42,7 +42,6 @@ export default async function handler(req, res) {
       image: t.album?.images?.[t.album.images.length - 1]?.url || t.album?.images?.[0]?.url || null
     }));
 
-    // cache קצר
     res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=60");
     return res.status(200).json({ tracks });
   } catch (e) {

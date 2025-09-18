@@ -1,7 +1,7 @@
 import React from 'react';
 
 export default function ClaudePlaylist({ playlistText }) {
-  // split into lines and render as numbered list with an empty line between items
+ 
   const lines = (playlistText || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
   return (

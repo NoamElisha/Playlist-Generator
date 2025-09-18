@@ -5,12 +5,10 @@ You don't need to use every ingredient they mention in your recipe. The recipe c
 Format your response in markdown to make it easier to render to a web page.
 `;
 
-// Read from Vite env (or fallback to localStorage for dev)
+
 const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || localStorage.getItem('ANTHROPIC_API_KEY');
 
-// -------------------------------
-// Chef Claude API (serverless)
-// -------------------------------
+
 export async function getPlaylistFromChefClaude(songsArr) {
   console.log('client: getPlaylistFromChefClaude -> sending', songsArr);
   const res = await fetch('/api/playlist-claude', {
@@ -20,7 +18,7 @@ export async function getPlaylistFromChefClaude(songsArr) {
   });
 
   if (!res.ok) {
-    // ננסה לפרש טקסט שגיאה מהשרת כדי להציג למשתמש
+  
     const txt = await res.text();
     try {
       const j = JSON.parse(txt);
@@ -30,11 +28,11 @@ export async function getPlaylistFromChefClaude(songsArr) {
     }
   }
 
-  const data = await res.json(); // { playlistText, count, targetTotal, ... }
+  const data = await res.json(); 
   return data;
 }
 
-// השאר (מתכונים) יכול להישאר כמו שהיה...
+
 export async function getRecipeFromChefClaude(ingredientsArr) {
   const res = await fetch('/api/recipe-claude', {
     method: 'POST',

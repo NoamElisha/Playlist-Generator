@@ -1,4 +1,4 @@
-// /api/spotify/callback.js
+
 export default async function handler(req, res) {
   try {
     const { code, error } = req.query;

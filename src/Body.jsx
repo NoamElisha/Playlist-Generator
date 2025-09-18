@@ -19,7 +19,7 @@ function isValidPlaylistName(name) {
 }
 
 export default function Body() {
-  const [view, setView] = React.useState("select"); // "select" | "result"
+  const [view, setView] = React.useState("select"); 
   const [songs, setSongs] = React.useState([]);
   const [playlistText, setPlaylistText] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -79,7 +79,7 @@ export default function Body() {
     <main className="page">
       {view === "select" && (
         <>
-          {/* Playlist name */}
+          
           <div className="card">
             <div className="section-title">Playlist name</div>
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -120,7 +120,7 @@ export default function Body() {
             </p>
           </div>
 
-          {/* 🔥 Suggested quick picks (ישראל + דינמי מהאמנים שנבחרו) */}
+          
           <SuggestedSongs
             selectedSongs={songs}
             onAdd={(line) => {
@@ -137,7 +137,7 @@ export default function Body() {
             }}
           />
 
-          {/* Progress */}
+          
           <div className="card">
             <div className="section-title">Progress</div>
             <div className="progress" aria-label="artists progress">

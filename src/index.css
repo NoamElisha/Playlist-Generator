@@ -85,7 +85,7 @@ body{
 .result-title{font-size:2rem;font-weight:800;letter-spacing:.4px;display:flex;align-items:center;gap:12px}
 .result-title .disc{width:44px;height:44px;border-radius:12px;background:radial-gradient(100% 100% at 50% 0%,#b495ff 0%,#7e5cf7 60%,#5b3ae0 100%);box-shadow:0 10px 30px rgba(139,92,246,.35)}
 
-/* Generated playlist list */
+
 ol.playlist{list-style:decimal;padding-left:28px;margin:10px 0 0}
 ol.playlist li{
   display:flex;justify-content:space-between;gap:12px;
@@ -94,7 +94,6 @@ ol.playlist li{
 .track-title{color:var(--text);flex:1}  /* ← חשוב! כותרת השיר תהיה בצד שמאל ובולטת */
 .track-meta{color:var(--muted)}
 
-/* Typeahead dropdown */
 .autocomplete-scroll{
   max-height:360px;overflow:auto;background:var(--surface-2);
   border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)

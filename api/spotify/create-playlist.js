@@ -1,4 +1,4 @@
-// /api/spotify/create-playlist.js
+
 function parseCookies(cookieHeader) {
   const cookies = {};
   if (!cookieHeader) return cookies;
@@ -31,7 +31,7 @@ async function refreshAccessToken(refreshToken) {
   if (!r.ok) {
     throw new Error('Spotify refresh failed: ' + JSON.stringify(j));
   }
-  return j; // { access_token, token_type, scope, expires_in, refresh_token? }
+  return j; 
 }
 
 function cookieStringsFromTokens({ access_token, refresh_token }) {
@@ -50,11 +50,11 @@ function cookieStringsFromTokens({ access_token, refresh_token }) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // Try Authorization header first
+
   const authHeader = req.headers['authorization'];
   let accessToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
-  // fallback: parse cookie header
+
   const cookies = parseCookies(req.headers?.cookie || '');
   let refreshToken = cookies.spotify_refresh_token || null;
   if (!accessToken) {
@@ -69,7 +69,7 @@ export default async function handler(req, res) {
   }
 
   async function ensureUserToken() {
-    // נסה /me עם ה-token הנוכחי; אם לא עובד ונמצא refresh_token — רענון ואח"כ retry
+    
     let r = await fetch('https://api.spotify.com/v1/me', {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -81,14 +81,14 @@ export default async function handler(req, res) {
       try {
         const refreshed = await refreshAccessToken(refreshToken);
         accessToken = refreshed.access_token;
-        // אם הגיע refresh_token חדש – נעדכן גם אותו
+        
         if (refreshed.refresh_token) refreshToken = refreshed.refresh_token;
 
-        // נעדכן קוקיות למשתמש
+ 
         const setCookies = cookieStringsFromTokens(refreshed);
         if (setCookies.length) res.setHeader('Set-Cookie', setCookies);
 
-        // ננסה שוב
+   
         r = await fetch('https://api.spotify.com/v1/me', {
           headers: { Authorization: `Bearer ${accessToken}` }
         });
@@ -118,7 +118,6 @@ export default async function handler(req, res) {
     }
     const userId = ensured.me.id;
 
-    // 2) create playlist
     let r = await fetch(`https://api.spotify.com/v1/users/${encodeURIComponent(userId)}/playlists`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -132,7 +131,6 @@ export default async function handler(req, res) {
     const pl = await r.json();
     const playlistId = pl.id;
 
-    // 3) search tracks and collect URIs
     const uris = [];
     for (const t of tracks) {
       const qParts = [];
@@ -150,7 +148,7 @@ export default async function handler(req, res) {
       if (uri) uris.push(uri);
     }
 
-    // 4) add tracks in batches
+
     for (let i = 0; i < uris.length; i += 100) {
       const batch = uris.slice(i, i+100);
       await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {

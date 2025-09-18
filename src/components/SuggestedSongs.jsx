@@ -23,7 +23,7 @@ export default function SuggestedSongs({ selectedSongs, onAdd }) {
     [selectedSongs]
   );
 
-  // אמנים ייחודיים מתוך הבחירות של המשתמש
+
   const pickedArtists = React.useMemo(() => {
     const out = [];
     const seen = new Set();
