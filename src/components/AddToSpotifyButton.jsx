@@ -1,15 +1,19 @@
 // /src/components/AddToSpotifyButton.jsx
+import { useState } from "react";
 import { parsePlaylistTextToTracks } from "../utils/parsePlaylistText";
 
 function emitToast(type, text) {
-  // משגרים רק אירוע אחד בשם "toast" לשני הערוצים למקרה שמאזין יושב על document
   const ev = new CustomEvent("toast", { detail: { type, text } });
+  // נירה לשניהם כדי לכסות כל מאזין אפשרי
   window.dispatchEvent(ev);
   document.dispatchEvent(new CustomEvent("toast", { detail: { type, text } }));
 }
 
 export default function AddToSpotifyButton({ playlistText, playlistName }) {
+  const [busy, setBusy] = useState(false);
+
   async function handleAdd() {
+    if (busy) return;
     const tracks = parsePlaylistTextToTracks(playlistText || "");
     if (!tracks.length) {
       emitToast("error", "אין שירים ברשימה. נסה לייצר פלייליסט מחדש.");
@@ -17,19 +21,19 @@ export default function AddToSpotifyButton({ playlistText, playlistName }) {
     }
 
     try {
-      console.log("▶ Creating playlist on Spotify, tracks:", tracks, "name:", playlistName);
-
+      setBusy(true);
       const res = await fetch("/api/spotify/create-playlist", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: (playlistName || "AI Playlist"), tracks }),
+        body: JSON.stringify({
+          name: (playlistName && playlistName.trim()) || "AI Playlist",
+          tracks,
+        }),
       });
 
-      console.log("create-playlist: HTTP status", res.status);
-
       if (res.status === 401) {
-        console.log("Not authenticated, redirecting to Spotify login...");
+        // לא מחוברים – נפנה להתחברות
         window.location.href = "/api/spotify/login";
         return;
       }
@@ -39,7 +43,7 @@ export default function AddToSpotifyButton({ playlistText, playlistName }) {
 
       emitToast(
         "success",
-        `נוצר פלייליסט: ${playlistName || "AI Playlist"} • נוספו ${data.added} שירים`
+        `נוצר פלייליסט: ${(playlistName && playlistName.trim()) || "AI Playlist"} • נוספו ${data.added} שירים`
       );
 
       if (data.playlistUrl) {
@@ -48,17 +52,21 @@ export default function AddToSpotifyButton({ playlistText, playlistName }) {
     } catch (err) {
       console.error("AddToSpotifyButton error:", err);
       emitToast("error", err?.message || String(err));
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
     <button
-      type="button"
+      type="button"                 // חשוב – אין submit
       onClick={handleAdd}
       className="btn green"
       title="הוספת הפלייליסט לחשבון ה-Spotify שלך"
+      disabled={busy}
+      style={{ opacity: busy ? 0.7 : 1, pointerEvents: busy ? "none" : "auto" }}
     >
-      Add to Spotify
+      {busy ? "Adding…" : "Add to Spotify"}
     </button>
   );
 }

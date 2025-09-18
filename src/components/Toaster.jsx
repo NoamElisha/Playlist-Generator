@@ -1,57 +1,45 @@
 // /src/components/Toaster.jsx
 import React from "react";
 
-// דה-דופליקציה: אם הגיעו כמה אירועים זהים (type+text) באותו רגע – נבלע כפולים
-function makeSig(e) {
-  const type = e?.detail?.type || "info";
-  const text = e?.detail?.text || "";
-  return `${type}|||${text}`;
-}
+// חתימה פשוטה למניעת כפילויות קרובות (type+text)
+const sig = (e) => `${e?.detail?.type || "info"}|||${e?.detail?.text || ""}`;
 
 export default function Toaster() {
   const [toasts, setToasts] = React.useState([]);
-  const lastSigRef = React.useRef(null);
+  const lastSigRef = React.useRef("");
   const lastTimeRef = React.useRef(0);
 
   React.useEffect(() => {
     const onToast = (e) => {
-      const sig = makeSig(e);
+      const s = sig(e);
       const now = Date.now();
-      // אם קיבלנו בדיוק אותו מסר פעמיים בתוך 200ms – נתעלם מהכפול
-      if (lastSigRef.current === sig && now - lastTimeRef.current < 200) return;
-      lastSigRef.current = sig;
+      // אם בדיוק אותו מסר הגיע פעמיים בהפרש < 200ms — נתעלם מהשני
+      if (lastSigRef.current === s && now - lastTimeRef.current < 200) return;
+      lastSigRef.current = s;
       lastTimeRef.current = now;
 
       const id = Math.random().toString(36).slice(2);
-      const t = {
-        id,
-        type: e?.detail?.type || "info",
-        text: e?.detail?.text || "",
-      };
+      const t = { id, type: e?.detail?.type || "info", text: e?.detail?.text || "" };
       setToasts((prev) => [...prev, t]);
 
-      // 9 שניות תצוגה
+      // מציגים 9 שניות (4 + 5 שביקשת)
+      const TTL = 9000;
       setTimeout(() => {
         setToasts((prev) => prev.filter((x) => x.id !== id));
-      }, 9000);
+      }, TTL);
     };
 
-    // מאזינים לשני השמות ועל שני היעדים, כדי לקלוט הכל – עם דה-דופליקציה
-    const names = ["toast", "app:toast"];
-    names.forEach((n) => {
-      window.addEventListener(n, onToast);
-      document.addEventListener(n, onToast);
-    });
+    // מאזין רק על window (לא על document) כדי לא להכפיל
+    window.addEventListener("toast", onToast);
+    window.addEventListener("app:toast", onToast); // תאימות לאירועים ישנים אם קיימים
 
-    // עזר דיבוג נוח: window.toast("hello", "success")
+    // דיבוג: window.toast("שלום", "success")
     window.toast = (text, type = "info") =>
       window.dispatchEvent(new CustomEvent("toast", { detail: { type, text } }));
 
     return () => {
-      names.forEach((n) => {
-        window.removeEventListener(n, onToast);
-        document.removeEventListener(n, onToast);
-      });
+      window.removeEventListener("toast", onToast);
+      window.removeEventListener("app:toast", onToast);
     };
   }, []);
 
