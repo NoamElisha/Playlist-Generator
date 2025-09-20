@@ -1,4 +1,38 @@
 
+function humanizeSpotifyError(status, raw) {
+  const txt = String(raw || "").toLowerCase();
+
+  // מצב פיתוח / משתמש לא מאושר לאפליקציה
+  const devHints = [
+    "developer", "development mode",
+    "only users following the app",
+    "user is not registered", "not whitelisted",
+    "restricted to registered users"
+  ];
+  if (status === 403 || devHints.some(m => txt.includes(m))) {
+    return { code: "DEVELOPMENT_MODE",
+      message: "האפליקציה במצב פיתוח וזמינה רק למשתמשים שאושרו מראש. פנה למפתח האפליקציה כדי לקבל גישה." };
+  }
+
+  // בעיות AUTH FLOW / redirect uri / code
+  const authHints = [
+    "redirect uri", "invalid_grant", "code verifier",
+    "invalid_client", "invalid redirect",
+    "does not match the redirect uri",
+    "string supplied was not in the expected format", "expected pattern"
+  ];
+  if (status === 400 || authHints.some(m => txt.includes(m))) {
+    return { code: "AUTH_FLOW_ERROR",
+      message: "נכשלה ההתחברות ל-Spotify. נסה שוב מהדפדפן שבו התחלת את ההתחברות, או רענן ונסה שוב." };
+  }
+
+  // ברירת מחדל
+  return { code: "GENERIC_SPOTIFY_ERROR",
+    message: "אירעה שגיאה מול Spotify. נסה שוב מאוחר יותר." };
+}
+
+
+
 function parseCookies(cookieHeader) {
   const cookies = {};
   if (!cookieHeader) return cookies;
@@ -98,24 +132,29 @@ export default async function handler(req, res) {
       }
     }
 
-    if (!r.ok) {
-      const txt = await r.text();
-      console.error('create-playlist: /me failed', r.status, txt);
-      return { ok: false, status: r.status, body: txt };
-    }
+if (!r.ok) {
+  const txt = await r.text();
+  console.error('create-playlist: /me failed', r.status, txt);
+  const nice = humanizeSpotifyError(r.status, txt);
+  return { ok: false, status: r.status, body: JSON.stringify({ error: nice.message, code: nice.code }) };
+}
 
     const me = await r.json();
     return { ok: true, me };
   }
 
   try {
-    const ensured = await ensureUserToken();
-    if (!ensured.ok) {
-      if (ensured.status === 401) {
-        return res.status(401).json({ error: ensured.body });
-      }
-      return res.status(ensured.status || 500).send(ensured.body || 'Spotify /me failed');
-    }
+  const ensured = await ensureUserToken();
+if (!ensured.ok) {
+  const status = ensured.status || 500;
+  try {
+    const j = JSON.parse(ensured.body || "{}");
+    return res.status(status).json(j);
+  } catch {
+    const nice = humanizeSpotifyError(status, ensured.body || "");
+    return res.status(status).json({ error: nice.message, code: nice.code });
+  }
+}
     const userId = ensured.me.id;
 
     let r = await fetch(`https://api.spotify.com/v1/users/${encodeURIComponent(userId)}/playlists`, {
@@ -123,11 +162,12 @@ export default async function handler(req, res) {
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, description: 'Playlist created by AI', public: false })
     });
-    if (!r.ok) {
-      const txt = await r.text();
-      console.error('create-playlist: create playlist failed', r.status, txt);
-      return res.status(r.status).send(txt);
-    }
+  if (!r.ok) {
+  const txt = await r.text();
+  console.error('create-playlist: create playlist failed', r.status, txt);
+  const nice = humanizeSpotifyError(r.status, txt);
+  return res.status(r.status).json({ error: nice.message, code: nice.code });
+}
     const pl = await r.json();
     const playlistId = pl.id;
 
@@ -149,14 +189,19 @@ export default async function handler(req, res) {
     }
 
 
-    for (let i = 0; i < uris.length; i += 100) {
-      const batch = uris.slice(i, i+100);
-      await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uris: batch })
-      });
-    }
+   for (let i = 0; i < uris.length; i += 100) {
+  const batch = uris.slice(i, i+100);
+  const addRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uris: batch })
+  });
+  if (!addRes.ok) {
+    const txt = await addRes.text();
+    const nice = humanizeSpotifyError(addRes.status, txt);
+    return res.status(addRes.status).json({ error: nice.message, code: nice.code });
+  }
+}
 
     console.log('create-playlist: finished, added', uris.length);
     return res.status(200).json({

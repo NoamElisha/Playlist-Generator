@@ -29,11 +29,17 @@ export default async function handler(req, res) {
     const data = await tokenRes.json();
     console.log('spotify callback: token response status', tokenRes.status, 'body:', data);
 
-    if (!tokenRes.ok) {
-      console.error('spotify token error', data);
-      return res.status(500).send('Spotify token exchange failed. Check logs.');
-    }
+if (!tokenRes.ok) {
+  console.error('spotify token error', data);
+  const raw = JSON.stringify(data || {});
+  const low = raw.toLowerCase();
+  let msg = "לא ניתן היה להתחבר ל-Spotify כרגע. נסה שוב.";
 
+  if (low.includes("redirect") || low.includes("invalid_grant") || low.includes("code")) {
+    msg = "נכשלה ההתחברות ל-Spotify (קוד/Redirect). נסה להתחבר מחדש מהדפדפן הזה.";
+  }
+  return res.status(500).send(msg);
+}
     const isProd = process.env.NODE_ENV === 'production';
     const baseCookie = 'HttpOnly; Path=/; SameSite=Lax';
     const accessCookie = `${baseCookie}; Max-Age=3600${isProd ? '; Secure' : ''}`;
